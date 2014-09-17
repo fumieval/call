@@ -3,8 +3,6 @@ module Call.Picture where
 import Call.Types
 import Call.Data.Bitmap
 import Data.Color
-import Linear
-import Unsafe.Coerce
 import Control.Applicative
 
 infixr 5 `translate`
@@ -41,31 +39,33 @@ class Affine p => Picture2D p where
     color :: Color -> p a -> p a
     blendMode :: BlendMode -> p a -> p a
 
-class Affine p => Local p where
-    getLocation :: p (Location a)
+newtype Picture a = Picture { runPicture :: forall m. (Applicative m, Monad m, Picture2D m) => m a }
 
-data Location a = Location (Vec2 -> Vec2) (Vec2 -> Vec2) deriving Functor
+instance Functor Picture where
+    fmap f (Picture m) = Picture (fmap f m)
 
-coerceLocation :: Location a -> Location b
-coerceLocation = unsafeCoerce
+instance Applicative Picture where
+    pure a = Picture (pure a)
+    Picture a <*> Picture b = Picture (a <*> b)
 
-flipLocation :: Location a -> Location b
-flipLocation (Location f g) = Location g f
+instance Monad Picture where
+    return a = Picture (return a)
+    Picture m >>= k = Picture (m >>= runPicture . k)
 
-localize :: Local f => Vec2 -> f Vec2
-localize v = fmap (\(Location _ g) -> g v) getLocation
+instance Affine Picture where
+    rotateR t (Picture m) = Picture (rotateR t m)
+    rotateD t (Picture m) = Picture (rotateD t m)
+    scale v (Picture m) = Picture (scale v m)
+    translate v (Picture m) = Picture (translate v m)
 
-globalize :: Local f => Vec2 -> f Vec2
-globalize v = fmap (\(Location f _) -> f v) getLocation
-
-instance Affine Location where
-    translate v (Location f g) = Location (f . (^+^v)) ((^-^v) . g)
-    rotateR t (Location f g) = Location (f . rot2 t) (rot2 (-t) . g)
-    scale v (Location f g) = Location (f . (*v)) ((/v) . g)
-
-rot2 :: Floating a => a -> V2 a -> V2 a
-rot2 t (V2 x y) = V2 (p * x + q * y) (-q * x + p * y) where
-    !p = cos t
-    !q = sin t
-
-newtype Picture a = Picture { runPicture :: forall m. (Applicative m, Monad m, Picture2D m, Local m) => m a }
+instance Picture2D Picture where
+    bitmap b = Picture (bitmap b)
+    bitmapOnce b = Picture (bitmapOnce b)
+    line vs = Picture (line vs)
+    polygon vs = Picture (polygon vs)
+    polygonOutline vs = Picture (polygonOutline vs)
+    circle r = Picture (circle r)
+    circleOutline r = Picture (circleOutline r)
+    thickness t (Picture m) = Picture (thickness t m)
+    color c (Picture m) = Picture (color c m)
+    blendMode b (Picture m) = Picture (blendMode b m)

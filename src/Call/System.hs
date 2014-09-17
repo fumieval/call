@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -103,15 +103,12 @@ data Foundation s = Foundation
     , theEnd :: MVar ()
     }
 
-drawPicture :: forall a. Given TextureStorage => Picture a -> IO a
-drawPicture (Picture m) = runReaderT (m :: DrawM a) (Location id id)
-
 runGraphic :: Foundation s -> IO ()
 runGraphic fo = do
     Just t <- GLFW.getTime
     G.beginFrame (theSystem fo)
     pics <- broadcast fo (coreGraphic fo) $ \s -> s t
-    give (TextureStorage (textures fo)) $ mapM_ drawPicture pics
+    give (TextureStorage (textures fo)) $ mapM_ runPicture pics
     b <- G.endFrame (theSystem fo)
     tryTakeMVar (theEnd fo) >>= \case
         Just _ -> return ()
@@ -209,24 +206,14 @@ instance (s0 ~ s) => MonadSystem s0 (System s) where
 
 newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
 
-type DrawM = ReaderT (Location ()) IO
+instance Affine IO where
+    translate = G.translate
+    rotateD = G.rotateD
+    rotateR t = let t' = t / pi * 180 in G.rotateD t'
+    scale = G.scale
 
-mapReaderWith :: (s -> r) -> (m a -> n b) -> ReaderT r m a -> ReaderT s n b
-mapReaderWith f g m = unsafeCoerce $ \s -> g (unsafeCoerce m (f s))
-{-# INLINE mapReaderWith #-}
-
-instance Affine DrawM where
-    translate v = mapReaderWith (translate v) (G.translate v)
-    {-# INLINE translate #-}
-    rotateD t = mapReaderWith (rotateD t) (G.rotateD t)
-    {-# INLINE rotateD #-}
-    rotateR t = let t' = t / pi * 180 in mapReaderWith (rotateR t) (G.rotateD t')
-    {-# INLINE rotateR #-}
-    scale v = mapReaderWith (scale v) (G.scale v)
-    {-# INLINE scale #-}
-
-instance (Given TextureStorage) => Picture2D DrawM where
-    bitmap (Bitmap bmp h) = liftIO $ do
+instance (Given TextureStorage) => Picture2D IO where
+    bitmap (Bitmap bmp h) = do
         m <- readIORef (getTextureStorage given)
         case IM.lookup h m of
             Just t -> G.drawTexture t
@@ -234,27 +221,16 @@ instance (Given TextureStorage) => Picture2D DrawM where
                 t <- G.installTexture bmp
                 writeIORef (getTextureStorage given) $ IM.insert h t m
                 G.drawTexture t
-    bitmapOnce (Bitmap bmp _) = liftIO $ do
+    bitmapOnce (Bitmap bmp _) = do
         t <- G.installTexture bmp
         G.drawTexture t
         G.releaseTexture t
 
-    circle r = liftIO (G.circle r)
-    {-# INLINE circle #-}
-    circleOutline r = liftIO (G.circleOutline r)
-    {-# INLINE circleOutline #-}
-    polygon vs = liftIO (G.polygon vs)
-    {-# INLINE polygon #-}
-    polygonOutline vs = liftIO (G.polygonOutline vs)
-    {-# INLINE polygonOutline #-}
-    line vs = liftIO (G.line vs)
-    {-# INLINE line #-}
-    thickness t = mapReaderWith id (G.thickness t)
-    {-# INLINE thickness #-}
-    color c = mapReaderWith id (G.color c)
-    {-# INLINE color #-}
-    blendMode m = mapReaderWith id (G.blendMode m)
-    {-# INLINE blendMode #-}
-
-instance Local DrawM where
-    getLocation = asks coerceLocation
+    circle = G.circle
+    circleOutline = G.circleOutline
+    polygon = G.polygon
+    polygonOutline = G.polygonOutline
+    line = G.line
+    thickness = G.thickness
+    color = G.color
+    blendMode = G.blendMode

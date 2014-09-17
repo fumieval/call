@@ -26,6 +26,8 @@ module Call ( -- * System
     -- * IO
     liftIO,
     loadBitmapsWith,
+    readBitmap,
+    readWAVE,
     -- * Reexports
     module Control.Monad,
     module Control.Applicative,
@@ -39,6 +41,7 @@ import Call.TH
 import Call.Types
 import Call.Component
 import Call.Data.Bitmap
+import Call.Data.Wave
 import Call.Picture
 import Call.System
 import Control.Monad.IO.Class
