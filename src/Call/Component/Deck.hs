@@ -31,6 +31,7 @@ data Actions x where
   Play :: Actions ()
   Stop :: Actions ()
   RMS :: Int -> Actions (V2 Double)
+  Seek :: Time -> Actions ()
   Pull :: Time -> Int -> Actions [V2 Float]
 
 data States = States
@@ -62,6 +63,7 @@ handle (Load s) = src ?= s
 handle Unload = src .= Nothing
 handle Play = playing .= True
 handle Stop = playing .= False
+handle (Seek t) = pos .= t
 handle (RMS n) = use src >>= \case
   Just (Source s) -> do
     r <- use sampleRate
