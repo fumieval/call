@@ -6,7 +6,6 @@ module Call ( -- * System
     runSystemDefault,
     MonadSystem(..),
     MonadObjective(..),
-    Control,
     (.&),
     -- * Component crafting
     Component(..),

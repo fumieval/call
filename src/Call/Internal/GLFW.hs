@@ -11,7 +11,6 @@
 --
 -----------------------------------------------------------------------------
 module Call.Internal.GLFW where
-import Control.Concurrent
 import Control.Bool
 import Control.Applicative
 import Control.Monad.IO.Class

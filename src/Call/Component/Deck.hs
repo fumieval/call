@@ -29,10 +29,10 @@ import Control.Applicative
 
 data States = States
   { _src :: Maybe (Source (V2 Float))
-  , _pos :: Time
-  , _pitch :: Double
-  , _playing :: Bool
-  , _sampleRate :: Double }
+  , _pos :: !Time
+  , _pitch :: !Double
+  , _playing :: !Bool
+  , _sampleRate :: !Double }
 
 --
 source :: Lens' States (Maybe (Source (V2 Float)))
@@ -60,7 +60,7 @@ handle (PullAudio dt0 n cont) = use source >>= \case
       then do
         r <- use sampleRate
         pos += dt
-        cont $ [s t | t <- [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]]
+        cont $! [s t | t <- [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]]
       else do
-        cont $ replicate n zero
-  Nothing -> cont $ replicate n zero
+        cont $! replicate n zero
+  Nothing -> cont $! replicate n zero

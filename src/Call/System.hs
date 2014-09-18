@@ -106,7 +106,6 @@ runGraphic :: Foundation s -> Double -> IO ()
 runGraphic fo t0 = do
     fps <- readIORef (targetFPS fo)
     let t1 = t0 + 1/fps
-    -- Just t <- GLFW.getTime
     G.beginFrame (theSystem fo)
     pics <- broadcast fo (coreGraphic fo) $ \s -> s (1/fps) -- is it appropriate?
     give (TextureStorage (textures fo)) $ mapM_ runPicture pics
@@ -172,6 +171,7 @@ instance MonadIO (System s) where
 
 instance (s0 ~ s) => MonadObjective s0 (System s) where
     type Base (System s) = System s
+    newtype Control s e = Control Int
     Control i .- e = mkSystem $ \fo -> do
         m <- readIORef $ cores fo
         push fo (m IM.! i) (unsafeCoerce e)
