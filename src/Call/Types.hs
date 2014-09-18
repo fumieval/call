@@ -1,5 +1,15 @@
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveDataTypeable #-}
-
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Call.Types
+-- Copyright   :  (c) Fumiaki Kinoshita 2014
+-- License     :  BSD3
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-----------------------------------------------------------------------------
 module Call.Types (
     Time
     , Vec2

@@ -18,13 +18,13 @@
 --
 -----------------------------------------------------------------------------
 module Call.Component.Deck (emptyDeck, States, source, pos, pitch, playing, sampleRate) where
-import Call.Component.Base
-import Call.Component.IO
+import Call.Component
 import Control.Lens
 import Linear
 import Call.Types
 import Control.Monad.State.Strict
 import Call.Data.Wave
+import Control.Object
 
 data States = States
   { _src :: Maybe (Source (V2 Float))
@@ -45,7 +45,7 @@ playing f s = f (_playing s) <&> \a -> s { _playing = a }
 sampleRate :: Lens' States Double
 sampleRate f s = f (_sampleRate s) <&> \a -> s { _sampleRate = a }
 
-emptyDeck :: Monad m => Component (AccessT States PullAudio) m
+emptyDeck :: Monad m => Object (AccessT States PullAudio) m
 emptyDeck = stateful handle $ States Nothing 0 1 False 44100 where -- FIXME: sample rate
 
 handle :: MonadState States m => PullAudio (m a) -> m a

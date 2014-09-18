@@ -1,5 +1,17 @@
 {-# LANGUAGE TemplateHaskell, CPP #-}
-
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Call.TH
+-- Copyright   :  (c) Fumiaki Kinoshita 2014
+-- License     :  BSD3
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-- Utilities that use Template Haskell
+--
+-----------------------------------------------------------------------------
 module Call.TH (
     loadBitmapsWith
     ) where

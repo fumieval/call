@@ -1,15 +1,16 @@
 {-# LANGUAGE Rank2Types #-}
 module Call ( -- * System
     Time,
+    MonadObjective(..),
+    (.&),
     System,
     runSystem,
     runSystemDefault,
     MonadSystem(..),
-    MonadObjective(..),
-    (.&),
     -- * Component crafting
-    Component(..),
+    Object(..),
     oneshot,
+    stateful,
     HandleMouse(..),
     HandleKeyboard(..),
     Graphic(..),
@@ -19,7 +20,7 @@ module Call ( -- * System
     PullAudio(..),
     KeyEvent(..),
     MouseEvent(..),
-
+    -- * Concrete types
     WindowMode(..),
     BoundingBox2,
     Box(..),
@@ -56,6 +57,8 @@ import Control.Monad.IO.Class
 import Control.Monad
 import Control.Applicative
 import Control.Bool
+import Control.Object
+import Control.Monad.Objective.Class
 import Data.Color
 import Data.Color.Names
 import Linear

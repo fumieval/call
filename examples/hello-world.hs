@@ -29,10 +29,10 @@ meter deck = oneshot $ \(PullGraphic _ cont) -> do
 
 main = runSystemDefault $ do
   deck <- invoke emptyDeck
-  connectAudio deck
-  invoke (meter deck) >>= connectGraphic
+  linkAudio deck
+  invoke (meter deck) >>= linkGraphic
+  invoke (handle deck) >>= linkKeyboard
   src <- readWAVE "hello-world.wav"
   deck .& source ?= src
   deck .& playing .= True
-  invoke (handle deck) >>= connectKeyboard
   stand

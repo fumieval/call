@@ -14,6 +14,17 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Call.System
+-- Copyright   :  (c) Fumiaki Kinoshita 2014
+-- License     :  BSD3
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-----------------------------------------------------------------------------
 module Call.System (System, runSystem, MonadSystem(..)) where
 
 import Call.Component
@@ -26,6 +37,8 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Control.Object
+import Control.Monad.Objective.Class
 import Data.IORef
 import Data.Reflection
 import GHC.Prim
@@ -39,14 +52,14 @@ import qualified System.PortAudio as PA
 import Unsafe.Coerce
 
 class (MonadIO m, MonadObjective s m) => MonadSystem s m where
-  connectMouse :: HandleMouse e => Control s e -> m ()
-  connectKeyboard :: HandleKeyboard e => Control s e -> m ()
-  connectGraphic :: Graphic e => Control s e -> m ()
-  connectAudio :: Audio e => Control s e -> m ()
-  disconnectMouse :: Control s e -> m ()
-  disconnectKeyboard :: Control s e -> m ()
-  disconnectGraphic :: Control s e -> m ()
-  disconnectAudio :: Control s e -> m ()
+  linkMouse :: HandleMouse e => Control s e -> m ()
+  linkKeyboard :: HandleKeyboard e => Control s e -> m ()
+  linkGraphic :: Graphic e => Control s e -> m ()
+  linkAudio :: Audio e => Control s e -> m ()
+  unlinkMouse :: Control s e -> m ()
+  unlinkKeyboard :: Control s e -> m ()
+  unlinkGraphic :: Control s e -> m ()
+  unlinkAudio :: Control s e -> m ()
   stand :: m ()
   wait :: Double -> m ()
 
@@ -88,9 +101,9 @@ runSystem mode box m = do
     tryTakeMVar ref
 
 data Foundation s = Foundation
-    { newComponentId :: MVar Int
+    { newObjectId :: MVar Int
     , sampleRate :: Double
-    , cores :: IORef (IM.IntMap (MVar (Component Any (System s))))
+    , cores :: IORef (IM.IntMap (MVar (Object Any (System s))))
     , coreGraphic :: IORef (IM.IntMap Any) -- rely on `invoke`
     , coreAudio :: IORef (IM.IntMap Any)
     , coreKeyboard :: IORef (IM.IntMap Any)
@@ -130,10 +143,10 @@ audioProcess fo = effectful $ \(PA.Chunk n _) -> do
     ws <- broadcast fo (coreAudio fo) $ \s -> s dt n
     return $ fmap v2v2 $ foldr (zipWith (+)) (replicate n zero) ws
 
-push :: Foundation s -> MVar (Component Any (System s)) -> e a -> IO a
+push :: Foundation s -> MVar (Object Any (System s)) -> e a -> IO a
 push fo mc e = do
     c0 <- takeMVar mc
-    (a, c) <- unSystem fo $ runComponent c0 (unsafeCoerce e)
+    (a, c) <- unSystem fo $ runObject c0 (unsafeCoerce e)
     putMVar mc c
     return a
 
@@ -176,29 +189,29 @@ instance (s0 ~ s) => MonadObjective s0 (System s) where
         m <- readIORef $ cores fo
         push fo (m IM.! i) (unsafeCoerce e)
     invoke c = mkSystem $ \fo -> do
-        n <- takeMVar $ newComponentId fo
+        n <- takeMVar $ newObjectId fo
         mc <- newMVar (unsafeCoerce c)
         modifyIORef (cores fo) $ IM.insert n mc
-        putMVar (newComponentId fo) (n + 1)
+        putMVar (newObjectId fo) (n + 1)
         return (Control n)
 
 instance (s0 ~ s) => MonadSystem s0 (System s) where
-    connectGraphic con@(Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo)
+    linkGraphic con@(Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo)
         $ IM.insert i $ unsafeCoerce $ assimilate con . pullGraphic
-    connectAudio con@(Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo)
+    linkAudio con@(Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo)
         $ IM.insert i $ unsafeCoerce $ (assimilate con .) . pullAudio
-    disconnectGraphic (Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
-    disconnectAudio (Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
-    connectKeyboard con@(Control i) = mkSystem
+    unlinkGraphic (Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
+    unlinkAudio (Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
+    linkKeyboard con@(Control i) = mkSystem
         $ \fo -> modifyIORef (coreKeyboard fo)
         $ IM.insert i (unsafeCoerce $ (assimilate con .) . keyEvent)
-    disconnectKeyboard (Control i) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.delete i
-    connectMouse con@(Control i) = mkSystem
+    unlinkKeyboard (Control i) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.delete i
+    linkMouse con@(Control i) = mkSystem
         $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (unsafeCoerce
             ( (assimilate con .) . mouseButtonEvent
             , assimilate con . cursorEvent
             , assimilate con . scrollEvent))
-    disconnectMouse (Control i) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
+    unlinkMouse (Control i) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
     wait dt = mkSystem $ \fo -> do
         t0 <- takeMVar (theTime fo)
         Just t <- GLFW.getTime

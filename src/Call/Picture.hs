@@ -1,4 +1,15 @@
 {-# LANGUAGE BangPatterns, DeriveFunctor, Rank2Types #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Call.Picture
+-- Copyright   :  (c) Fumiaki Kinoshita 2014
+-- License     :  BSD3
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-----------------------------------------------------------------------------
 module Call.Picture where
 import Call.Types
 import Call.Data.Bitmap
