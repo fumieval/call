@@ -69,11 +69,12 @@ runSystem mode box m = do
         <*> pure 44100 -- FIX THIS
         <*> newIORef IM.empty
         <*> newIORef IM.empty
-        <*> newIORef Nothing
+        <*> newIORef IM.empty
         <*> newIORef IM.empty
         <*> newIORef IM.empty
         <*> newMVar 0
         <*> pure sys
+        <*> newIORef 60
         <*> newIORef IM.empty
         <*> newEmptyMVar
     let win = G.theWindow sys
@@ -85,7 +86,7 @@ runSystem mode box m = do
     _ <- flip forkFinally (either throwIO (putMVar ref)) $ unSystem f m
     PA.with undefined undefined undefined (audioProcess f) $ liftIO $ do
         GLFW.setTime 0
-        runGraphic f
+        runGraphic f 0
     G.endGLFW sys
     tryTakeMVar ref
 
@@ -94,26 +95,33 @@ data Foundation s = Foundation
     , sampleRate :: Double
     , cores :: IORef (IM.IntMap (MVar (Component Any (System s))))
     , coreGraphic :: IORef (IM.IntMap Any) -- rely on `invoke`
-    , coreAudio :: IORef (Maybe (Int, Any))
+    , coreAudio :: IORef (IM.IntMap Any)
     , coreKeyboard :: IORef (IM.IntMap Any)
     , coreMouse :: IORef (IM.IntMap Any)
     , theTime :: MVar Double
     , theSystem :: G.System
+    , targetFPS :: IORef Double
     , textures :: IORef (IM.IntMap G.Texture)
     , theEnd :: MVar ()
     }
 
-runGraphic :: Foundation s -> IO ()
-runGraphic fo = do
-    Just t <- GLFW.getTime
+runGraphic :: Foundation s -> Double -> IO ()
+runGraphic fo t0 = do
+    fps <- readIORef (targetFPS fo)
+    let t1 = t0 + 1/fps
+    -- Just t <- GLFW.getTime
     G.beginFrame (theSystem fo)
-    pics <- broadcast fo (coreGraphic fo) $ \s -> s t
+    pics <- broadcast fo (coreGraphic fo) $ \s -> s (1/fps) -- is it appropriate?
     give (TextureStorage (textures fo)) $ mapM_ runPicture pics
     b <- G.endFrame (theSystem fo)
+    
+    Just t' <- GLFW.getTime
+    threadDelay $ floor $ (t1 - t') * 1000 * 1000
+
     tryTakeMVar (theEnd fo) >>= \case
         Just _ -> return ()
         _ | b -> putMVar (theEnd fo) ()
-          | otherwise -> runGraphic fo
+          | otherwise -> runGraphic fo t1
 
 v2v2 :: V2 Float -> V 2 Float
 v2v2 (V2 x y) = case fromVector $ V.fromList [x, y] of
@@ -121,12 +129,10 @@ v2v2 (V2 x y) = case fromVector $ V.fromList [x, y] of
     Nothing -> zero
 
 audioProcess :: Foundation s -> Artery IO (PA.Chunk (V 0 Float)) [V 2 Float]
-audioProcess fo = effectful $ \(PA.Chunk n _) -> readIORef (coreAudio fo) >>= \case
-    Nothing -> return $ fmap v2v2 $ replicate n 0
-    Just (j, pull) -> do
-        m <- readIORef $ cores fo
-        let dt = fromIntegral n / sampleRate fo
-        fmap (fmap v2v2) $ push fo (m IM.! j) (unsafeCoerce pull dt n)
+audioProcess fo = effectful $ \(PA.Chunk n _) -> do
+    let dt = fromIntegral n / sampleRate fo
+    ws <- broadcast fo (coreAudio fo) $ \s -> s dt n
+    return $ fmap v2v2 $ foldr (zipWith (+)) (replicate n zero) ws
 
 push :: Foundation s -> MVar (Component Any (System s)) -> e a -> IO a
 push fo mc e = do
@@ -179,14 +185,11 @@ instance (s0 ~ s) => MonadSystem s0 (System s) where
         putMVar (newComponentId fo) (n + 1)
         return (Control n)
     connectGraphic con@(Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo)
-        $ IM.insert i (unsafeCoerce $ assimilate con . pullGraphic)
-    connectAudio con@(Control i) = mkSystem $ \fo -> do
-        writeIORef (coreAudio fo) $ Just (i, unsafeCoerce $ (assimilate con .) . pullAudio)
-        return ()
+        $ IM.insert i $ unsafeCoerce $ assimilate con . pullGraphic
+    connectAudio con@(Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo)
+        $ IM.insert i $ unsafeCoerce $ (assimilate con .) . pullAudio
     disconnectGraphic (Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
-    disconnectAudio (Control _) = mkSystem $ \fo -> do
-        _ <- writeIORef (coreAudio fo) Nothing
-        return ()
+    disconnectAudio (Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
     connectKeyboard con@(Control i) = mkSystem
         $ \fo -> modifyIORef (coreKeyboard fo)
         $ IM.insert i (unsafeCoerce $ (assimilate con .) . keyEvent)

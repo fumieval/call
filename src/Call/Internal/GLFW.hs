@@ -33,11 +33,7 @@ import Codec.Picture.RGBA8
 import qualified GHC.IO.Encoding as Encoding
 
 data System = System
-    { refFrameCounter :: IORef Int
-    , refFPS :: IORef Int
-    , theFPS :: IORef Int
-    , currentFPS :: IORef Int
-    , refRegion :: IORef BoundingBox2
+    { refRegion :: IORef BoundingBox2
     , theWindow :: GLFW.Window
     }
 
@@ -162,13 +158,6 @@ endFrame :: System -> IO Bool
 endFrame sys = do
     GLFW.swapBuffers $ theWindow sys
     GLFW.pollEvents
-    Just t <- GLFW.getTime
-    n <- readIORef (refFrameCounter sys)
-    fps <- readIORef (theFPS sys)
-    threadDelay $ max 0 $ floor $ (1000000 *) $ fromIntegral n / fromIntegral fps - t
-    if t > 1
-        then GLFW.setTime 0 >> writeIORef (currentFPS sys) n >> writeIORef (refFrameCounter sys) 0
-        else writeIORef (refFrameCounter sys) (succ n)
     GLFW.windowShouldClose (theWindow sys)
 
 beginGLFW :: WindowMode -> BoundingBox2 -> IO System
@@ -200,13 +189,7 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
     GLFW.setFramebufferSizeCallback win $ Just $ \_ w h -> do
         modifyIORef rbox $ size zero .~ fmap fromIntegral (V2 w h)
 
-    System
-        <$> newIORef 0
-        <*> newIORef 0
-        <*> newIORef 60
-        <*> newIORef 60
-        <*> pure rbox
-        <*> pure win
+    return $ System rbox win
 
 endGLFW :: System -> IO ()
 endGLFW sys = do
