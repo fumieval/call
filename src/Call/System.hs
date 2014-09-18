@@ -38,10 +38,7 @@ import qualified Graphics.UI.GLFW as GLFW
 import qualified System.PortAudio as PA
 import Unsafe.Coerce
 
-class MonadIO m => MonadSystem s m where
-  type Base m :: * -> *
-  (.-) :: Control s e -> e a -> m a
-  invoke :: Component e (Base m) -> m (Control s e)
+class (MonadIO m, MonadObjective s m) => MonadSystem s m where
   connectMouse :: HandleMouse e => Control s e -> m ()
   connectKeyboard :: HandleKeyboard e => Control s e -> m ()
   connectGraphic :: Graphic e => Control s e -> m ()
@@ -173,7 +170,7 @@ instance MonadIO (System s) where
     liftIO m = mkSystem $ const m
     {-# INLINE liftIO #-}
 
-instance (s0 ~ s) => MonadSystem s0 (System s) where
+instance (s0 ~ s) => MonadObjective s0 (System s) where
     type Base (System s) = System s
     Control i .- e = mkSystem $ \fo -> do
         m <- readIORef $ cores fo
@@ -184,6 +181,8 @@ instance (s0 ~ s) => MonadSystem s0 (System s) where
         modifyIORef (cores fo) $ IM.insert n mc
         putMVar (newComponentId fo) (n + 1)
         return (Control n)
+
+instance (s0 ~ s) => MonadSystem s0 (System s) where
     connectGraphic con@(Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo)
         $ IM.insert i $ unsafeCoerce $ assimilate con . pullGraphic
     connectAudio con@(Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo)
