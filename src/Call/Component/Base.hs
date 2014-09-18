@@ -12,7 +12,7 @@ module Call.Component.Base where
 
 import Control.Comonad.Zero
 import Control.Comonad
-import Control.Monad.Trans.State.Strict
+import Control.Monad.State.Strict
 
 infix 3 .-
 infix 3 .&
@@ -25,10 +25,11 @@ oneshot m = go where
 
 stateful :: (Functor e, Monad m) => (forall a. e (StateT s m a) -> StateT s m a) -> s -> Component (AccessT s e) m
 stateful m = go where
-  go s = Component $ \r -> case r of
-    LiftAccessT e -> runStateT (m (fmap return e)) s >>= \(a, s') -> return (a, go $! s')
-    Get cont -> return (cont s, go $! s)
-    Put s' cont -> return (cont, go $! s')
+  go s = Component $ \k -> liftM (fmap go) $ case k of
+    LiftAccessT e -> runStateT (m (fmap return e)) s
+    Get cont -> return (cont s, s)
+    Put s' cont -> return (cont, s')
+{-# INLINE stateful #-}
 
 class Monad m => MonadObjective s m where
   type Base m :: * -> *
@@ -43,7 +44,7 @@ class Stateful s f where
 (.&) :: (MonadObjective k m, Stateful s e) => Control k e -> StateT s m a -> m a
 c .& m = do
   s <- c .- get_
-  (!a, !s') <- runStateT m s
+  (a, s') <- runStateT m s
   c .- put_ s'
   return a
 

@@ -34,22 +34,22 @@ class Audio e where
 instance Audio e => Audio (AccessT s e) where
   pullAudio dt n = LiftAccessT (pullAudio dt n)
 
-data PullGraphic a = PullGraphic Time (Picture () -> a) deriving Functor
+data PullGraphic a = PullGraphic !Time (Picture () -> a) deriving Functor
 
 instance Graphic PullGraphic where
   pullGraphic t = PullGraphic t id
 
-data PullAudio a = PullAudio Time Int ([V2 Float] -> a) deriving Functor
+data PullAudio a = PullAudio !Time !Int ([V2 Float] -> a) deriving Functor
 
 instance Audio PullAudio where
   pullAudio t n = PullAudio t n id
 
-data KeyEvent a = KeyEvent Key Bool a deriving Functor
+data KeyEvent a = KeyEvent !Key !Bool a deriving Functor
 
 instance HandleKeyboard KeyEvent where
   keyEvent k b = KeyEvent k b ()
 
-data MouseEvent a = CursorEvent Vec2 a | ScrollEvent Vec2 a | MouseButtonEvent Int Bool a
+data MouseEvent a = CursorEvent !Vec2 a | ScrollEvent !Vec2 a | MouseButtonEvent !Int !Bool a
 
 instance HandleMouse MouseEvent where
   cursorEvent v = CursorEvent v ()

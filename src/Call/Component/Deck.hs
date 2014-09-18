@@ -25,7 +25,6 @@ import Linear
 import Call.Types
 import Control.Monad.State.Strict
 import Call.Data.Wave
-import Control.Applicative
 
 data States = States
   { _src :: Maybe (Source (V2 Float))
@@ -47,7 +46,7 @@ sampleRate :: Lens' States Double
 sampleRate f s = f (_sampleRate s) <&> \a -> s { _sampleRate = a }
 
 emptyDeck :: Monad m => Component (AccessT States PullAudio) m
-emptyDeck = stateful handle $ States Nothing 0 1 False 4410-- FIXME: sample rate
+emptyDeck = stateful handle $ States Nothing 0 1 False 44100 where -- FIXME: sample rate
 
 handle :: MonadState States m => PullAudio (m a) -> m a
 handle (PullAudio dt0 n cont) = use source >>= \case
@@ -60,7 +59,7 @@ handle (PullAudio dt0 n cont) = use source >>= \case
       then do
         r <- use sampleRate
         pos += dt
-        cont $! [s t | t <- [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]]
+        cont $ map s [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]
       else do
-        cont $! replicate n zero
-  Nothing -> cont $! replicate n zero
+        cont $ replicate n zero
+  Nothing -> cont $ replicate n zero
