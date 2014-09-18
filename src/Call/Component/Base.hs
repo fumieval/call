@@ -22,6 +22,13 @@ oneshot :: (Functor e, Monad m) => (forall a. e (m a) -> m a) -> Component e m
 oneshot m = go where
   go = Component $ \e -> m (fmap return e) >>= \a -> return (a, go)
 
+stateful :: (Functor e, Monad m) => (forall a. e (StateT s m a) -> StateT s m a) -> s -> Component (AccessT s e) m
+stateful m = go where
+  go s = Component $ \r -> case r of
+    LiftAccessT e -> runStateT (m (fmap return e)) s >>= \(a, s') -> return (a, go s')
+    Get cont -> return (cont s, go s)
+    Put s' cont -> return (cont, go s')
+
 newtype Control s (e :: * -> *) = Control Int
 
 class Monad m => MonadObjective s m where
