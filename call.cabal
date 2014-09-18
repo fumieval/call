@@ -21,11 +21,13 @@ library
     Call.System
     Call.Picture
     Call.Component
+    Call.Component.Base
+    Call.Component.Deck
+    Call.Component.IO
     Call.Internal.GLFW
     Call.Data.Wave
     Call.Data.Font
     Call.Data.Bitmap
-    Call.Component.Deck
   ghc-options: -Wall -fexcess-precision -O2 -threaded
   other-extensions:    Rank2Types, DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveDataTypeable, TemplateHaskell, CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeSynonymInstances, ScopedTypeVariables, FlexibleInstances, FlexibleContexts, KindSignatures, TypeFamilies, BangPatterns, ViewPatterns, LambdaCase, DataKinds, GADTs
   build-depends:
@@ -54,6 +56,8 @@ library
     WAVE >=0.1 && <0.2,
     freetype2 >=0.1 && <0.2,
     random ==1.*,
-    hashable >=1.2 && <1.3
+    hashable >=1.2 && <1.3,
+    trivia,
+    comonad
   hs-source-dirs:      src
   default-language:    Haskell2010
