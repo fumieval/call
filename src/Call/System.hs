@@ -6,6 +6,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -41,7 +43,6 @@ import Control.Object
 import Control.Monad.Objective.Class
 import Data.IORef
 import Data.Reflection
-import GHC.Prim
 import Linear
 import Linear.V
 import qualified Call.Internal.GLFW as G
@@ -81,7 +82,6 @@ runSystem mode box m = do
         <*> newIORef IM.empty
         <*> newIORef IM.empty
         <*> newIORef IM.empty
-        <*> newIORef IM.empty
         <*> newMVar 0
         <*> pure sys
         <*> newIORef 60
@@ -100,14 +100,15 @@ runSystem mode box m = do
     G.endGLFW sys
     tryTakeMVar ref
 
+data Member c s = forall e. c e => Member (MVar (Object e (System s)))
+
 data Foundation s = Foundation
     { newObjectId :: MVar Int
     , sampleRate :: Double
-    , cores :: IORef (IM.IntMap (MVar (Object Any (System s))))
-    , coreGraphic :: IORef (IM.IntMap Any) -- rely on `invoke`
-    , coreAudio :: IORef (IM.IntMap Any)
-    , coreKeyboard :: IORef (IM.IntMap Any)
-    , coreMouse :: IORef (IM.IntMap Any)
+    , coreGraphic :: IORef (IM.IntMap (Member Graphic s))
+    , coreAudio :: IORef (IM.IntMap (Member Audio s))
+    , coreKeyboard :: IORef (IM.IntMap (Member HandleKeyboard s))
+    , coreMouse :: IORef (IM.IntMap (Member HandleMouse s))
     , theTime :: MVar Double
     , theSystem :: G.System
     , targetFPS :: IORef Double
@@ -115,12 +116,44 @@ data Foundation s = Foundation
     , theEnd :: MVar ()
     }
 
+instance MonadIO (System s) where
+    liftIO m = mkSystem $ const m
+    {-# INLINE liftIO #-}
+
+instance (s0 ~ s) => MonadObjective s0 (System s) where
+    type Base (System s) = System s
+    data Control s e = Control　Int (MVar (Object e (System s)))
+    Control _ m .- e = mkSystem $ \fo -> push fo m e
+    invoke c = mkSystem $ \fo -> do
+        n <- takeMVar $ newObjectId fo
+        mc <- newMVar c
+        putMVar (newObjectId fo) (n + 1)
+        return (Control n mc)
+
+instance (s0 ~ s) => MonadSystem s0 (System s) where
+    linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.insert i (Member mc)
+    linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member mc)
+    linkKeyboard (Control i mc) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.insert i (Member mc)
+    linkMouse (Control i mc) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (Member mc)
+    unlinkGraphic (Control i _) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
+    unlinkAudio (Control i _) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
+    unlinkMouse (Control i _) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
+    unlinkKeyboard (Control i _) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.delete i
+
+    wait dt = mkSystem $ \fo -> do
+        t0 <- takeMVar (theTime fo)
+        Just t <- GLFW.getTime
+        threadDelay $ floor $ (t0 - t + dt) * 1000 * 1000
+        putMVar (theTime fo) $ t0 + dt
+    stand = mkSystem $ \fo -> takeMVar (theEnd fo)
+
 runGraphic :: Foundation s -> Double -> IO ()
 runGraphic fo t0 = do
     fps <- readIORef (targetFPS fo)
     let t1 = t0 + 1/fps
     G.beginFrame (theSystem fo)
-    pics <- broadcast fo (coreGraphic fo) $ \s -> s (1/fps) -- is it appropriate?
+    ms <- readIORef (coreGraphic fo)
+    pics <- forM (IM.elems ms) $ \(Member m) -> push fo m $ pullGraphic (1/fps) -- is it appropriate?
     give (TextureStorage (textures fo)) $ mapM_ runPicture pics
     b <- G.endFrame (theSystem fo)
     
@@ -140,84 +173,38 @@ v2v2 (V2 x y) = case fromVector $ V.fromList [x, y] of
 audioProcess :: Foundation s -> Artery IO (PA.Chunk (V 0 Float)) [V 2 Float]
 audioProcess fo = effectful $ \(PA.Chunk n _) -> do
     let dt = fromIntegral n / sampleRate fo
-    ws <- broadcast fo (coreAudio fo) $ \s -> s dt n
+    ms <- readIORef (coreAudio fo)
+    ws <- forM (IM.elems ms) $ \(Member m) -> push fo m $ pullAudio dt n
     return $ fmap v2v2 $ foldr (zipWith (+)) (replicate n zero) ws
 
-push :: Foundation s -> MVar (Object Any (System s)) -> e a -> IO a
+push :: Foundation s -> MVar (Object e (System s)) -> e a -> IO a
 push fo mc e = do
     c0 <- takeMVar mc
-    (a, c) <- unSystem fo $ runObject c0 (unsafeCoerce e)
+    (a, c) <- unSystem fo $ runObject c0 e
     putMVar mc c
     return a
 
-broadcast :: Foundation s
-    -> IORef (IM.IntMap Any)
-    -> something
-    -> IO [a]
-broadcast fo rfs e = do
-    cs <- readIORef (cores fo)
-    fs <- readIORef rfs
-    forM (IM.assocs fs) $ \(j, f) -> push fo (cs IM.! j) (unsafeCoerce e (unsafeCoerce f))
-
 keyCallback :: Foundation s -> GLFW.KeyCallback
-keyCallback fo _ k _ st _ = void $ broadcast fo (coreKeyboard fo)
-    $ \s -> s (toEnum . fromEnum $ k :: Key) (GLFW.KeyState'Released /= st)
+keyCallback fo _ k _ st _ = do
+    ms <- readIORef (coreKeyboard fo)
+    forM_ (IM.elems ms) $ \(Member m) -> push fo m
+        $ keyEvent (toEnum . fromEnum $ k :: Key) (GLFW.KeyState'Released /= st)
 
 mouseButtonCallback :: Foundation s -> GLFW.MouseButtonCallback
-mouseButtonCallback fo _ btn st _ = void $ broadcast fo (coreMouse fo)
-    $ \(s, _, _) -> s (fromEnum btn) (GLFW.MouseButtonState'Released /= st)
+mouseButtonCallback fo _ btn st _ = do
+    ms <- readIORef (coreMouse fo)
+    forM_ (IM.elems ms) $ \(Member m) -> push fo m
+        $ mouseButtonEvent (fromEnum btn) (GLFW.MouseButtonState'Released /= st)
 
 cursorPosCallback :: Foundation s -> GLFW.CursorPosCallback
-cursorPosCallback fo _ x y = void $ broadcast fo (coreMouse fo)
-    $ \(_, s, _) -> s (V2 x y)
+cursorPosCallback fo _ x y = do
+    ms <- readIORef (coreMouse fo)
+    forM_ (IM.elems ms) $ \(Member m) -> push fo m $ cursorEvent (V2 x y)
 
 scrollCallback :: Foundation s -> GLFW.ScrollCallback
-scrollCallback fo _ x y = void $ broadcast fo (coreMouse fo)
-    $ \(_, _, s) -> s (V2 x y)
-
-assimilate :: Control s e -> e a -> e a
-assimilate _ = id
-
-instance MonadIO (System s) where
-    liftIO m = mkSystem $ const m
-    {-# INLINE liftIO #-}
-
-instance (s0 ~ s) => MonadObjective s0 (System s) where
-    type Base (System s) = System s
-    newtype Control s e = Control Int
-    Control i .- e = mkSystem $ \fo -> do
-        m <- readIORef $ cores fo
-        push fo (m IM.! i) (unsafeCoerce e)
-    invoke c = mkSystem $ \fo -> do
-        n <- takeMVar $ newObjectId fo
-        mc <- newMVar (unsafeCoerce c)
-        modifyIORef (cores fo) $ IM.insert n mc
-        putMVar (newObjectId fo) (n + 1)
-        return (Control n)
-
-instance (s0 ~ s) => MonadSystem s0 (System s) where
-    linkGraphic con@(Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo)
-        $ IM.insert i $ unsafeCoerce $ assimilate con . pullGraphic
-    linkAudio con@(Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo)
-        $ IM.insert i $ unsafeCoerce $ (assimilate con .) . pullAudio
-    unlinkGraphic (Control i) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
-    unlinkAudio (Control i) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
-    linkKeyboard con@(Control i) = mkSystem
-        $ \fo -> modifyIORef (coreKeyboard fo)
-        $ IM.insert i (unsafeCoerce $ (assimilate con .) . keyEvent)
-    unlinkKeyboard (Control i) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.delete i
-    linkMouse con@(Control i) = mkSystem
-        $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (unsafeCoerce
-            ( (assimilate con .) . mouseButtonEvent
-            , assimilate con . cursorEvent
-            , assimilate con . scrollEvent))
-    unlinkMouse (Control i) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
-    wait dt = mkSystem $ \fo -> do
-        t0 <- takeMVar (theTime fo)
-        Just t <- GLFW.getTime
-        threadDelay $ floor $ (t0 - t + dt) * 1000 * 1000
-        putMVar (theTime fo) $ t0 + dt
-    stand = mkSystem $ \fo -> takeMVar (theEnd fo)
+scrollCallback fo _ x y = do
+    ms <- readIORef (coreMouse fo)
+    forM_ (IM.elems ms) $ \(Member m) -> push fo m $ scrollEvent (V2 x y)
 
 newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
 
