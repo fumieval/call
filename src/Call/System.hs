@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -40,7 +41,7 @@ import Control.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Object
-import Control.Monad.Objective.Class
+import Control.Monad.Objective
 import Data.IORef
 import Data.Reflection
 import Linear
@@ -52,15 +53,15 @@ import qualified Graphics.UI.GLFW as GLFW
 import qualified System.PortAudio as PA
 import Unsafe.Coerce
 
-class (MonadIO m, MonadObjective s m) => MonadSystem s m where
-  linkMouse :: HandleMouse e => Control s e -> m ()
-  linkKeyboard :: HandleKeyboard e => Control s e -> m ()
-  linkGraphic :: Graphic e => Control s e -> m ()
-  linkAudio :: Audio e => Control s e -> m ()
-  unlinkMouse :: Control s e -> m ()
-  unlinkKeyboard :: Control s e -> m ()
-  unlinkGraphic :: Control s e -> m ()
-  unlinkAudio :: Control s e -> m ()
+class (MonadIO m, MonadObjective m) => MonadSystem m where
+  linkMouse :: HandleMouse e => Address e m -> m ()
+  linkKeyboard :: HandleKeyboard e => Address e m -> m ()
+  linkGraphic :: Graphic e => Address e m -> m ()
+  linkAudio :: Audio e => Address e m -> m ()
+  unlinkMouse :: Address e m -> m ()
+  unlinkKeyboard :: Address e m -> m ()
+  unlinkGraphic :: Address e m -> m ()
+  unlinkAudio :: Address e m -> m ()
   stand :: m ()
   wait :: Double -> m ()
 
@@ -120,9 +121,9 @@ instance MonadIO (System s) where
     liftIO m = mkSystem $ const m
     {-# INLINE liftIO #-}
 
-instance (s0 ~ s) => MonadObjective s0 (System s) where
-    type Base (System s) = System s
-    data Control s e = Control　Int (MVar (Object e (System s)))
+instance MonadObjective (System s) where
+    type Residence (System s) = System s
+    data Address e (System s) = Control　Int (MVar (Object e (System s)))
     Control _ m .- e = mkSystem $ \fo -> push fo m e
     invoke c = mkSystem $ \fo -> do
         n <- takeMVar $ newObjectId fo
@@ -130,7 +131,7 @@ instance (s0 ~ s) => MonadObjective s0 (System s) where
         putMVar (newObjectId fo) (n + 1)
         return (Control n mc)
 
-instance (s0 ~ s) => MonadSystem s0 (System s) where
+instance MonadSystem (System s) where
     linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.insert i (Member mc)
     linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member mc)
     linkKeyboard (Control i mc) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.insert i (Member mc)
