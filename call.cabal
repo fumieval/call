@@ -26,6 +26,7 @@ library
     Call.Data.Wave
     Call.Data.Font
     Call.Data.Bitmap
+    Call.Util
   ghc-options: -Wall -fexcess-precision -O2 -threaded
   other-extensions:    Rank2Types, DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveDataTypeable, TemplateHaskell, CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeSynonymInstances, ScopedTypeVariables, FlexibleInstances, FlexibleContexts, KindSignatures, TypeFamilies, BangPatterns, ViewPatterns, LambdaCase, DataKinds, GADTs
   build-depends:

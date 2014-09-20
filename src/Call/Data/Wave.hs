@@ -12,6 +12,7 @@
 -----------------------------------------------------------------------------
 module Call.Data.Wave (
   Source(..),
+  Stereo,
   readWAVE
 ) where
 
@@ -23,7 +24,9 @@ import qualified Data.Vector.Unboxed as V
 
 newtype Source a = Source (Time -> a)
 
-readWAVE :: MonadIO m => FilePath -> m (Source (V2 Float))
+type Stereo = V2 Float
+
+readWAVE :: MonadIO m => FilePath -> m (Source Stereo)
 readWAVE path = liftIO $ do
   WAVE h ss <- getWAVEFile path
   

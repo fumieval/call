@@ -162,7 +162,7 @@ endFrame sys = do
 beginGLFW :: WindowMode -> BoundingBox2 -> IO System
 beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
     Encoding.setForeignEncoding Encoding.utf8
-    let title = "free-game"
+    let title = "call"
         ww = floor $ x1 - x0
         wh = floor $ y1 - y0
     () <- unlessM GLFW.init (fail "Failed to initialize")

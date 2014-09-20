@@ -8,11 +8,9 @@ module Call ( -- * System
     runSystemDefault,
     MonadSystem(..),
     -- * Component crafting
-    Object(..),
-    oneshot,
-    stateful,
-    HandleMouse(..),
-    HandleKeyboard(..),
+    module Control.Object,
+    Mouse(..),
+    Keyboard(..),
     Graphic(..),
     Audio(..),
     -- * Free instances

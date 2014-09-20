@@ -28,7 +28,7 @@
 -- Portability :  non-portable
 --
 -----------------------------------------------------------------------------
-module Call.System (System, runSystem, MonadSystem(..)) where
+module Call.System (System, runSystem, MonadSystem(..), forkSystem) where
 
 import Call.Component
 import Call.Data.Bitmap
@@ -54,8 +54,8 @@ import qualified System.PortAudio as PA
 import Unsafe.Coerce
 
 class (MonadIO m, MonadObjective m) => MonadSystem m where
-  linkMouse :: HandleMouse e => Address e m -> m ()
-  linkKeyboard :: HandleKeyboard e => Address e m -> m ()
+  linkMouse :: Mouse e => Address e m -> m ()
+  linkKeyboard :: Keyboard e => Address e m -> m ()
   linkGraphic :: Graphic e => Address e m -> m ()
   linkAudio :: Audio e => Address e m -> m ()
   unlinkMouse :: Address e m -> m ()
@@ -72,6 +72,9 @@ unSystem f m = unsafeCoerce m f
 
 mkSystem :: (Foundation s -> IO a) -> System s a
 mkSystem = unsafeCoerce
+
+forkSystem :: System s () -> System s ThreadId
+forkSystem m = mkSystem $ \fo -> forkIO (unSystem fo m)
 
 runSystem :: WindowMode -> BoundingBox2 -> (forall s. System s a) -> IO (Maybe a)
 runSystem mode box m = do
@@ -108,8 +111,8 @@ data Foundation s = Foundation
     , sampleRate :: Double
     , coreGraphic :: IORef (IM.IntMap (Member Graphic s))
     , coreAudio :: IORef (IM.IntMap (Member Audio s))
-    , coreKeyboard :: IORef (IM.IntMap (Member HandleKeyboard s))
-    , coreMouse :: IORef (IM.IntMap (Member HandleMouse s))
+    , coreKeyboard :: IORef (IM.IntMap (Member Keyboard s))
+    , coreMouse :: IORef (IM.IntMap (Member Mouse s))
     , theTime :: MVar Double
     , theSystem :: G.System
     , targetFPS :: IORef Double
