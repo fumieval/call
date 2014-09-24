@@ -28,10 +28,10 @@ meter deck = oneshot $ \(PullGraphic _ cont) -> do
       polygonOutline [V2 24 0, V2 40 0, V2 40 (-b * 240), V2 24 (-b * 240)]
 
 main = runSystemDefault $ do
-  deck <- invoke emptyDeck
+  deck <- new emptyDeck
   linkAudio deck
-  invoke (meter deck) >>= linkGraphic
-  invoke (handle deck) >>= linkKeyboard
+  new (meter deck) >>= linkGraphic
+  new (handle deck) >>= linkKeyboard
   src <- readWAVE "hello-world.wav"
   deck .& source ?= src
   deck .& playing .= True

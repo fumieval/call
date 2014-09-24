@@ -127,7 +127,7 @@ instance MonadObjective (System s) where
     type Residence (System s) = System s
     data Address e (System s) = Control　Int (MVar (Object e (System s)))
     Control _ m .- e = mkSystem $ \fo -> push fo m e
-    invoke c = mkSystem $ \fo -> do
+    new c = mkSystem $ \fo -> do
         n <- takeMVar $ newObjectId fo
         mc <- newMVar c
         putMVar (newObjectId fo) (n + 1)
