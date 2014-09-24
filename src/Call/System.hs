@@ -35,7 +35,6 @@ import Call.Data.Bitmap
 import Call.Picture
 import Call.Types
 import Control.Applicative
-import Control.Artery
 import Control.Concurrent
 import Control.Exception
 import Control.Monad.IO.Class
@@ -50,7 +49,7 @@ import qualified Call.Internal.GLFW as G
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector as V
 import qualified Graphics.UI.GLFW as GLFW
-import qualified System.PortAudio as PA
+import qualified Call.Internal.PortAudio as PA
 import Unsafe.Coerce
 
 class (MonadIO m, MonadObjective m) => MonadSystem m where
@@ -98,7 +97,7 @@ runSystem mode box m = do
     GLFW.setScrollCallback win $ Just $ scrollCallback f
     ref <- newEmptyMVar
     _ <- flip forkFinally (either throwIO (putMVar ref)) $ unSystem f m
-    PA.with undefined undefined undefined (audioProcess f) $ liftIO $ do
+    PA.with 44100 512 (audioProcess f) $ liftIO $ do
         GLFW.setTime 0
         runGraphic f 0
     G.endGLFW sys
@@ -169,17 +168,12 @@ runGraphic fo t0 = do
         _ | b -> putMVar (theEnd fo) ()
           | otherwise -> runGraphic fo t1
 
-v2v2 :: V2 Float -> V 2 Float
-v2v2 (V2 x y) = case fromVector $ V.fromList [x, y] of
-    Just a -> a
-    Nothing -> zero
-
-audioProcess :: Foundation s -> Artery IO (PA.Chunk (V 0 Float)) [V 2 Float]
-audioProcess fo = effectful $ \(PA.Chunk n _) -> do
+audioProcess :: Foundation s -> Int -> IO [V2 Float]
+audioProcess fo n = do
     let dt = fromIntegral n / sampleRate fo
     ms <- readIORef (coreAudio fo)
     ws <- forM (IM.elems ms) $ \(Member m) -> push fo m $ pullAudio dt n
-    return $ fmap v2v2 $ foldr (zipWith (+)) (replicate n zero) ws
+    return $ foldr (zipWith (+)) (replicate n zero) ws
 
 push :: Foundation s -> MVar (Object e (System s)) -> e a -> IO a
 push fo mc e = do

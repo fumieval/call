@@ -1,0 +1,92 @@
+{-# LANGUAGE ViewPatterns, FlexibleContexts #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+module Call.Internal.PortAudio(Error(..), with) where
+
+import Bindings.PortAudio
+import Foreign.C.String
+import Foreign.C.Types
+import Foreign hiding (with)
+import Control.Monad.IO.Class
+import Control.Monad
+import Data.Proxy
+import Linear
+import Control.Concurrent.MVar
+import Control.Exception
+import Data.Typeable
+data Error = NotInitialized
+  | UnanticipatedHostError
+  | InvalidChannelCount
+  | InvalidSampleRate
+  | InvalidDevice
+  | InvalidFlag
+  | SampleFormatNotSupported
+  | BadIODeviceCombination
+  | InsufficientMemory
+  | BufferTooBig
+  | BufferTooSmall
+  | NullCallback
+  | BadStreamPtr
+  | TimedOut
+  | InternalError
+  | DeviceUnavailable
+  | IncompatibleHostApiSpecificStreamInfo
+  | StreamIsStopped
+  | StreamIsNotStopped
+  | InputOverflowed
+  | OutputUnderflowed
+  | HostApiNotFound
+  | InvalidHostApi
+  | CanNotReadFromACallbackStream
+  | CanNotWriteToACallbackStream
+  | CanNotReadFromAnOutputOnlyStream
+  | CanNotWriteToAnInputOnlyStream
+  | IncompatibleStreamHostApi
+  | BadBufferPtr
+  deriving (Show, Eq, Ord, Enum, Typeable)
+
+instance Exception Error
+
+fromErrorCode :: CInt -> Error
+fromErrorCode n = toEnum (fromIntegral n + 10000)
+
+data Host = Host Int String
+
+getHostApis :: MonadIO m => m [Host]
+getHostApis = liftIO $ do
+    n <- c'Pa_GetHostApiCount
+    forM [0..n - 1] $ \i -> do
+      info <- c'Pa_GetHostApiInfo i >>= peek
+      name <- peekCAString $ c'PaHostApiInfo'name info
+      return (Host (fromIntegral i) name)
+
+callback :: (Int -> IO [V2 Float]) -> Ptr () -> Ptr () -> CULong -> x -> y -> z -> IO CUInt
+callback f (castPtr -> pin) (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
+  f n >>= pokeArray pout
+  return c'paContinue
+
+with :: MonadIO m => Double -> Int -> (Int -> IO [V2 Float]) -> m a -> m a
+with rate buf f m = do
+    w c'Pa_Initialize
+    cb <- liftIO $ mk'PaStreamCallback $ callback f
+    
+    ps <- liftIO malloc
+    w $ c'Pa_OpenDefaultStream ps
+        0
+        2
+        1 -- Float
+        (realToFrac rate)
+        (fromIntegral buf)
+        cb
+        nullPtr
+    s <- liftIO $ peek ps
+
+    w $ c'Pa_StartStream s
+    r <- m
+    w $ c'Pa_StopStream s
+    w $ c'Pa_CloseStream s
+    w $ c'Pa_Terminate
+    return r
+    where
+      w m = do
+        r <- liftIO m
+        unless (r == 0) $ liftIO $ throwIO $ fromErrorCode r
