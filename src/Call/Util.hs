@@ -11,7 +11,7 @@ import Control.Lens
 
 animate :: (Time -> System s (Picture ())) -> System s (Address PullGraphic (System s))
 animate f = do
-  p <- invoke (go 0)
+  p <- new (go 0)
   linkGraphic p
   return p
   where
@@ -19,7 +19,7 @@ animate f = do
 
 withSound :: Source Stereo -> System s a -> System s a
 withSound src m = do
-  deck <- invoke emptyDeck
+  deck <- new emptyDeck
   deck .& source ?= src
   deck .& playing .= True
   linkAudio deck

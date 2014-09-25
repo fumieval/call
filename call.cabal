@@ -31,7 +31,7 @@ library
   other-extensions:    Rank2Types, DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveDataTypeable, TemplateHaskell, CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeSynonymInstances, ScopedTypeVariables, FlexibleInstances, FlexibleContexts, KindSignatures, TypeFamilies, BangPatterns, ViewPatterns, LambdaCase, DataKinds, GADTs
   build-depends:
     base >=4.5 && <5,
-    transformers >=0.4 && <0.5,
+    transformers >=0.3 && <0.5,
     control-bool >=0.2 && <0.3,
     colors >=0.1 && <0.2,
     linear >=1.10 && <1.11,

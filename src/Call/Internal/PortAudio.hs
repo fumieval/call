@@ -3,14 +3,11 @@
 module Call.Internal.PortAudio(Error(..), with) where
 
 import Bindings.PortAudio
-import Foreign.C.String
 import Foreign.C.Types
 import Foreign hiding (with)
 import Control.Monad.IO.Class
 import Control.Monad
-import Data.Proxy
 import Linear
-import Control.Concurrent.MVar
 import Control.Exception
 import Data.Typeable
 data Error = NotInitialized
@@ -48,7 +45,7 @@ instance Exception Error
 
 fromErrorCode :: CInt -> Error
 fromErrorCode n = toEnum (fromIntegral n + 10000)
-
+{-
 data Host = Host Int String
 
 getHostApis :: MonadIO m => m [Host]
@@ -58,9 +55,9 @@ getHostApis = liftIO $ do
       info <- c'Pa_GetHostApiInfo i >>= peek
       name <- peekCAString $ c'PaHostApiInfo'name info
       return (Host (fromIntegral i) name)
-
+-}
 callback :: (Int -> IO [V2 Float]) -> Ptr () -> Ptr () -> CULong -> x -> y -> z -> IO CUInt
-callback f (castPtr -> pin) (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
+callback f (castPtr -> _) (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
   f n >>= pokeArray pout
   return c'paContinue
 
@@ -87,6 +84,6 @@ with rate buf f m = do
     w $ c'Pa_Terminate
     return r
     where
-      w m = do
-        r <- liftIO m
+      w n = do
+        r <- liftIO n
         unless (r == 0) $ liftIO $ throwIO $ fromErrorCode r

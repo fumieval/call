@@ -44,10 +44,8 @@ import Control.Monad.Objective
 import Data.IORef
 import Data.Reflection
 import Linear
-import Linear.V
 import qualified Call.Internal.GLFW as G
 import qualified Data.IntMap.Strict as IM
-import qualified Data.Vector as V
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Call.Internal.PortAudio as PA
 import Unsafe.Coerce
