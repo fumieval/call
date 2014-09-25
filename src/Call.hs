@@ -19,22 +19,27 @@ module Call ( -- * System
     KeyEvent(..),
     MouseEvent(..),
     -- * Concrete types
+    Vec2,
     WindowMode(..),
     BoundingBox2,
     Box(..),
     isInside,
     Picture(..),
-    Bitmap,
-    readBitmap,
     Affine(..),
     Picture2D(..),
-    Source(..),
-    readWAVE,
+    BlendMode(..),
     Key(..),
     charToKey,
+    -- * Bitmap
+    Bitmap,
+    readBitmap,
+    clipBitmap,
+    loadBitmapsWith,
+    -- * Sound
+    Source(..),
+    readWAVE,
     -- * IO
     liftIO,
-    loadBitmapsWith,
     -- * Reexports
     module Control.Monad,
     module Control.Applicative,
