@@ -50,6 +50,9 @@ class Affine p => Picture2D p where
     color :: Color -> p a -> p a
     blendMode :: BlendMode -> p a -> p a
 
+opacity :: Picture2D p => Float -> p a -> p a
+opacity a = color (Color 1 1 1 a)
+
 newtype Picture a = Picture { runPicture :: forall m. (Applicative m, Monad m, Picture2D m) => m a }
 
 instance Functor Picture where

@@ -27,6 +27,7 @@ module Call ( -- * System
     Picture(..),
     Affine(..),
     Picture2D(..),
+    opacity,
     BlendMode(..),
     Key(..),
     charToKey,
