@@ -23,6 +23,7 @@ library
     Call.Component
     Call.Component.Deck
     Call.Internal.GLFW
+    Call.Internal.PortAudio
     Call.Data.Wave
     Call.Data.Font
     Call.Data.Bitmap
