@@ -46,9 +46,9 @@ sampleRate :: Lens' States Double
 sampleRate f s = f (_sampleRate s) <&> \a -> s { _sampleRate = a }
 
 emptyDeck :: Monad m => Object (AccessT States PullAudio) m
-emptyDeck = stateful handle $ States Nothing 0 1 False 44100 where -- FIXME: sample rate
+emptyDeck = sharing handle $ States Nothing 0 1 False 44100 where -- FIXME: sample rate
 
-handle :: MonadState States m => PullAudio (m a) -> m a
+handle :: MonadState States m => PullAudio a -> m a
 handle (PullAudio dt0 n cont) = use source >>= \case
   Just (Source s) -> do
     pl <- use playing
@@ -59,7 +59,7 @@ handle (PullAudio dt0 n cont) = use source >>= \case
       then do
         r <- use sampleRate
         pos += dt
-        cont $ map s [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]
+        return $ cont $ map s [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]
       else do
-        cont $ replicate n zero
-  Nothing -> cont $ replicate n zero
+        return $ cont $ replicate n zero
+  Nothing -> return $ cont $ replicate n zero

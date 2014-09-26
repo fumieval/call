@@ -1,9 +1,11 @@
 {-# LANGUAGE Rank2Types, LambdaCase #-}
+-- $ ghc -threaded hello-world.hs
 import Call
 import Call.Component.Deck
 import Control.Lens
 
-rms n = use source >>= \case
+-- calculates the root-mean-square value of the playing sound
+currentRMS n = use source >>= \case
   Just (Source s) -> do
     r <- use sampleRate
     t <- use pos
@@ -11,15 +13,18 @@ rms n = use source >>= \case
     return $ fmap realToFrac $ fmap (/fromIntegral n) $ sum $ map (fmap (^(2::Int)) . s) [t0, t0 + 1 / r..t]
   Nothing -> return 0
 
+handle :: Address (AccessT States f) (System s) -> Object KeyEvent (System s)
 handle deck = oneshot $ \case
   KeyEvent KeySpace True cont -> do
     deck .& pos .= 0
     cont
   KeyEvent _ _ cont -> cont
 
+-- visualizes the loudness of current sound.
+meter :: Address (AccessT States f) (System s) -> Object PullGraphic (System s)
 meter deck = oneshot $ \(PullGraphic _ cont) -> do
   let s x = (10 + max (log x / log 10) (-10)) / 10
-  V2 a b <- fmap (fmap s) $ deck .& rms 1024
+  V2 a b <- fmap (fmap s) $ deck .& currentRMS 1024
   cont $ translate (V2 0 240) $ do
     color black $ do
       polygonOutline [V2 0 0, V2 40 0, V2 40 (-240), V2 0 (-240)]
@@ -36,3 +41,4 @@ main = runSystemDefault $ do
   deck .& source ?= src
   deck .& playing .= True
   stand
+ 
