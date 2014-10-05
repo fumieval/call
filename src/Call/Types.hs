@@ -15,6 +15,10 @@ module Call.Types (
     , Vec2
     , WindowMode(..)
     , BoundingBox2
+    , MouseEvent(..)
+    , Chatter(..)
+    , WindowRefresh(..)
+    , AudioRefresh(..)
     , Key(..)
     , charToKey
     , BlendMode(..)
@@ -32,6 +36,13 @@ data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Rea
 type Vec2 = V2 Double
 
 type BoundingBox2 = Box V2 Double
+
+data WindowRefresh = WindowRefresh Time
+data AudioRefresh = AudioRefresh Time Int
+
+data Chatter a = Up a | Down a
+
+data MouseEvent = Button (Chatter Int) | Cursor Vec2 | Scroll Vec2
 
 data Key =
       KeyUnknown

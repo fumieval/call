@@ -19,7 +19,7 @@ module Call.TH (
 import Control.Applicative
 import Control.Monad
 import Data.Char
-import Call.Data.Bitmap
+import qualified Call.Data.Bitmap as Bitmap
 import Language.Haskell.TH
 import System.Directory
 import System.FilePath
@@ -35,7 +35,7 @@ loadBitmapsWith getFullPath path = do
     sequence $ do
         p <- paths
         let name = pathToName p
-        [ return $ SigD (mkName name) (ConT ''Bitmap)
+        [ return $ SigD (mkName name) (ConT ''Bitmap.Bitmap)
             , funD (mkName name) [clause [] (normalB $ load name $ loc </> p) []]
             ]
     where
@@ -44,7 +44,7 @@ loadBitmapsWith getFullPath path = do
 
             appE (varE 'unsafePerformIO) $ uInfixE (appE getFullPath $ litE $ StringL fp)
                 (varE '(>>=))
-                (varE 'readBitmap)
+                (varE 'Bitmap.readFile)
 
 -- | Load and define all pictures in the specified directory.
 -- On base >= 4.6, file paths to actually load will be respect to the directory of the executable. Otherwise it will be based on the current directory.

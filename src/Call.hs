@@ -7,17 +7,15 @@ module Call ( -- * System
     runSystem,
     runSystemDefault,
     MonadSystem(..),
-    -- * Component crafting
-    module Control.Object,
-    Mouse(..),
-    Keyboard(..),
-    Graphic(..),
-    Audio(..),
-    -- * Free instances
-    PullGraphic(..),
-    PullAudio(..),
-    KeyEvent(..),
+    -- * Events
+    WindowRefresh,
+    AudioRefresh,
+    Chatter(..),
     MouseEvent(..),
+    Graphic,
+    Audio,
+    Keyboard,
+    Mouse,
     -- * Concrete types
     Vec2,
     WindowMode(..),
@@ -34,13 +32,17 @@ module Call ( -- * System
     -- * Bitmap
     Bitmap,
     readBitmap,
-    clipBitmap,
     loadBitmapsWith,
     -- * Sound
     Source(..),
     readWAVE,
     -- * IO
     liftIO,
+    -- * Utilities
+    animate,
+    announce,
+    transit,
+    withSound,
     -- * Reexports
     module Control.Monad,
     module Control.Applicative,
@@ -48,15 +50,16 @@ module Call ( -- * System
     module Data.Color,
     module Data.Color.Names,
     module Linear,
+    module Control.Object
 ) where
 
 import Call.TH
 import Call.Types
-import Call.Component
 import Call.Data.Bitmap
 import Call.Data.Wave
 import Call.Picture
 import Call.System
+import Call.Util
 import Control.Monad.IO.Class
 import Control.Monad
 import Control.Applicative

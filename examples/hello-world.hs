@@ -1,10 +1,12 @@
-{-# LANGUAGE Rank2Types, LambdaCase #-}
+{-# LANGUAGE Rank2Types, LambdaCase, FlexibleContexts #-}
 -- $ ghc -threaded hello-world.hs
 import Call
-import Call.Component.Deck
+import Call.Util.Deck
 import Control.Lens
+import Control.Monad.State.Strict
 
 -- calculates the root-mean-square value of the playing sound
+currentRMS :: MonadState Deck m => Int -> m (V2 Float)
 currentRMS n = use source >>= \case
   Just (Source s) -> do
     r <- use sampleRate
@@ -13,17 +15,17 @@ currentRMS n = use source >>= \case
     return $ fmap realToFrac $ fmap (/fromIntegral n) $ sum $ map (fmap (^(2::Int)) . s) [t0, t0 + 1 / r..t]
   Nothing -> return 0
 
-handle :: Address (AccessT States f) (System s) -> Object KeyEvent (System s)
+handle :: Lift (State Deck) e => Address e (System s) -> Object Keyboard (System s)
 handle deck = oneshot $ \case
-  KeyEvent KeySpace True cont -> do
+  Request (Down KeySpace) cont -> do
     deck .& pos .= 0
-    cont
-  KeyEvent _ _ cont -> cont
+    cont ()
+  Request _ cont -> cont ()
 
 -- visualizes the loudness of current sound.
-meter :: Address (AccessT States f) (System s) -> Object PullGraphic (System s)
-meter deck = oneshot $ \(PullGraphic _ cont) -> do
-  let s x = (10 + max (log x / log 10) (-10)) / 10
+meter :: Lift (State Deck) e => Address e (System s) -> Object Graphic (System s)
+meter deck = oneshot $ \(Request _ cont) -> do
+  let s x = (10 + max (log (realToFrac x) / log 10) (-10)) / 10
   V2 a b <- fmap (fmap s) $ deck .& currentRMS 1024
   cont $ translate (V2 0 240) $ do
     color black $ do
@@ -33,7 +35,7 @@ meter deck = oneshot $ \(PullGraphic _ cont) -> do
       polygonOutline [V2 24 0, V2 40 0, V2 40 (-b * 240), V2 24 (-b * 240)]
 
 main = runSystemDefault $ do
-  deck <- new emptyDeck
+  deck <- new Call.Util.Deck.empty
   linkAudio deck
   new (meter deck) >>= linkGraphic
   new (handle deck) >>= linkKeyboard

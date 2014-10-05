@@ -56,7 +56,7 @@ readFont :: MonadIO m => FilePath -> m Font
 readFont path = liftIO $ alloca $ \p -> do
     runFreeType $ withCString path $ \str -> ft_New_Face freeType str 0 p
     f <- peek p
-    b <- peek (bbox f)
+    b <- peek (F.bbox f)
     asc <- peek (ascender f)
     desc <- peek (descender f)
     u <- fromIntegral <$> peek (units_per_EM f)
@@ -131,7 +131,7 @@ render face siz ch = do
     fptr <- newForeignPtr_ $ castPtr $ buffer bmp
 
     adv <- peek $ GS.advance slot
-    b <- liftBitmapIO $ fromColorAndOpacity (PixelRGB8 255 255 255)
+    b <- liftImage' $ fromColorAndOpacity (PixelRGB8 255 255 255)
         $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
     return $ RenderedChar
         b

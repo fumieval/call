@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TypeOperators #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Call.Component.Deck
@@ -17,16 +18,17 @@
 -- Decks that plays sounds
 --
 -----------------------------------------------------------------------------
-module Call.Component.Deck (emptyDeck, States, source, pos, pitch, playing, sampleRate) where
-import Call.Component
+module Call.Util.Deck (empty, Deck, source, pos, pitch, playing, sampleRate) where
 import Control.Lens
 import Linear
 import Call.Types
 import Control.Monad.State.Strict
 import Call.Data.Wave
 import Control.Object
+import Data.OpenUnion1.Clean
+import Call.System
 
-data States = States
+data Deck = Deck
   { _src :: Maybe (Source (V2 Float))
   , _pos :: !Time
   , _pitch :: !Double
@@ -34,22 +36,22 @@ data States = States
   , _sampleRate :: !Double }
 
 --
-source :: Lens' States (Maybe (Source (V2 Float)))
+source :: Lens' Deck (Maybe (Source (V2 Float)))
 source f s = f (_src s) <&> \a -> s { _src = a }
-pos :: Lens' States Time
+pos :: Lens' Deck Time
 pos f s = f (_pos s) <&> \a -> s { _pos = a }
-pitch :: Lens' States Time
+pitch :: Lens' Deck Time
 pitch f s = f (_pitch s) <&> \a -> s { _pitch = a }
-playing :: Lens' States Bool
+playing :: Lens' Deck Bool
 playing f s = f (_playing s) <&> \a -> s { _playing = a }
-sampleRate :: Lens' States Double
+sampleRate :: Lens' Deck Double
 sampleRate f s = f (_sampleRate s) <&> \a -> s { _sampleRate = a }
 
-emptyDeck :: Monad m => Object (AccessT States PullAudio) m
-emptyDeck = sharing handle $ States Nothing 0 1 False 44100 where -- FIXME: sample rate
+empty :: Monad m => Object (State Deck |> Audio |> Nil) m
+empty = sharing handle $ Deck Nothing 0 1 False 44100 where -- FIXME: sample rate
 
-handle :: MonadState States m => PullAudio a -> m a
-handle (PullAudio dt0 n cont) = use source >>= \case
+handle :: MonadState Deck m => Audio a -> m a
+handle (Request (AudioRefresh dt0 n) cont) = use source >>= \case
   Just (Source s) -> do
     pl <- use playing
     t0 <- use pos

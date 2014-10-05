@@ -1,5 +1,5 @@
 name:                call
-version:             0.0.1
+version:             0.1
 synopsis:            The call game engine
 description:         Call is a minimalistic game engine which supports 2D graphics and sounds.
 homepage:            https://github.com/fumieval/call
@@ -20,14 +20,14 @@ library
     Call.TH
     Call.System
     Call.Picture
-    Call.Component
-    Call.Component.Deck
+    Call.Event
     Call.Internal.GLFW
     Call.Internal.PortAudio
     Call.Data.Wave
     Call.Data.Font
     Call.Data.Bitmap
     Call.Util
+    Call.Util.Deck
   ghc-options: -Wall -fexcess-precision -O2 -threaded
   other-extensions:    Rank2Types, DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveDataTypeable, TemplateHaskell, CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeSynonymInstances, ScopedTypeVariables, FlexibleInstances, FlexibleContexts, KindSignatures, TypeFamilies, BangPatterns, ViewPatterns, LambdaCase, DataKinds, GADTs
   build-depends:
@@ -54,8 +54,9 @@ library
     freetype2 >=0.1 && <0.2,
     random ==1.*,
     hashable >=1.2 && <1.3,
-    objective >= 0.3 && <0.4,
-    bindings-portaudio
+    objective >= 0.4 && <0.5,
+    bindings-portaudio,
+    clean-unions >= 0.0.1 && <0.1
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -63,5 +64,5 @@ executable hello-world
   ghc-options: -threaded
   main-is: examples/hello-world.hs
   buildable: False
-  build-depends: base == 4.*, call <= 0.1, lens == 4
+  build-depends: base == 4.*, call <= 0.1, lens == 4.*
   default-language:    Haskell2010

@@ -50,8 +50,8 @@ preservingMatrix' m = do
     return r
 {-# INLINE preservingMatrix' #-}
 
-drawTexture :: Texture -> IO ()
-drawTexture (tex, !w, !h) = drawTextureAt tex (V2 (-w) (-h)) (V2 w (-h)) (V2 w h) (V2 (-w) h)
+drawTexture :: V2 Double -> Texture -> IO ()
+drawTexture (V2 x y) (tex, !w, !h) = drawTextureAt tex (V2 (x-w) (y-h)) (V2 (x+w) (y-h)) (V2 (x+w) (y+h)) (V2 (x-w) (y+h))
 {-# INLINE drawTexture #-}
 
 drawTextureAt :: GL.TextureObject -> V2 Double -> V2 Double -> V2 Double -> V2 Double -> IO ()

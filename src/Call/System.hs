@@ -14,6 +14,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -----------------------------------------------------------------------------
@@ -27,12 +28,12 @@
 -- Portability :  non-portable
 --
 -----------------------------------------------------------------------------
-module Call.System (System, runSystem, MonadSystem(..), forkSystem) where
+module Call.System (Graphic, Audio, Mouse, Keyboard, System, runSystem, MonadSystem(..), forkSystem) where
 
-import Call.Component
 import Call.Data.Bitmap
 import Call.Picture
 import Call.Types
+import Call.Event
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
@@ -50,10 +51,10 @@ import qualified Call.Internal.PortAudio as PA
 import Unsafe.Coerce
 
 class (MonadIO m, MonadObjective m) => MonadSystem m where
-  linkMouse :: Mouse e => Address e m -> m ()
-  linkKeyboard :: Keyboard e => Address e m -> m ()
-  linkGraphic :: Graphic e => Address e m -> m ()
-  linkAudio :: Audio e => Address e m -> m ()
+  linkMouse :: Lift Mouse e => Address e m -> m ()
+  linkKeyboard :: Lift Keyboard e => Address e m -> m ()
+  linkGraphic :: Lift Graphic e => Address e m -> m ()
+  linkAudio :: Lift Audio e => Address e m -> m ()
   unlinkMouse :: Address e m -> m ()
   unlinkKeyboard :: Address e m -> m ()
   unlinkGraphic :: Address e m -> m ()
@@ -100,15 +101,16 @@ runSystem mode box m = do
     G.endGLFW sys
     tryTakeMVar ref
 
-data Member c s = forall e. c e => Member (MVar (Object e (System s)))
+data Member e s where
+    Member :: (forall x. e x -> f x) -> MVar (Object f (System s)) -> Member e s
 
 data Foundation s = Foundation
     { newObjectId :: MVar Int
     , sampleRate :: Double
-    , coreGraphic :: IORef (IM.IntMap (Member Graphic s))
-    , coreAudio :: IORef (IM.IntMap (Member Audio s))
-    , coreKeyboard :: IORef (IM.IntMap (Member Keyboard s))
-    , coreMouse :: IORef (IM.IntMap (Member Mouse s))
+    , coreGraphic :: IORef (IM.IntMap (Member (Request WindowRefresh (Picture ())) s))
+    , coreAudio :: IORef (IM.IntMap (Member (Request AudioRefresh [V2 Float]) s))
+    , coreKeyboard :: IORef (IM.IntMap (Member (Request (Chatter Key) ()) s))
+    , coreMouse :: IORef (IM.IntMap (Member (Request MouseEvent ()) s))
     , theTime :: MVar Double
     , theSystem :: G.System
     , targetFPS :: IORef Double
@@ -131,10 +133,10 @@ instance MonadObjective (System s) where
         return (Control n mc)
 
 instance MonadSystem (System s) where
-    linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.insert i (Member mc)
-    linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member mc)
-    linkKeyboard (Control i mc) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.insert i (Member mc)
-    linkMouse (Control i mc) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (Member mc)
+    linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.insert i (Member lift_ mc)
+    linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member lift_ mc)
+    linkKeyboard (Control i mc) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.insert i (Member lift_ mc)
+    linkMouse (Control i mc) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (Member lift_ mc)
     unlinkGraphic (Control i _) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
     unlinkAudio (Control i _) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
     unlinkMouse (Control i _) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
@@ -153,7 +155,7 @@ runGraphic fo t0 = do
     let t1 = t0 + 1/fps
     G.beginFrame (theSystem fo)
     ms <- readIORef (coreGraphic fo)
-    pics <- forM (IM.elems ms) $ \(Member m) -> push fo m $ pullGraphic (1/fps) -- is it appropriate?
+    pics <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ WindowRefresh (1/fps) -- is it appropriate?
     give (TextureStorage (textures fo)) $ mapM_ runPicture pics
     b <- G.endFrame (theSystem fo)
     
@@ -169,7 +171,7 @@ audioProcess :: Foundation s -> Int -> IO [V2 Float]
 audioProcess fo n = do
     let dt = fromIntegral n / sampleRate fo
     ms <- readIORef (coreAudio fo)
-    ws <- forM (IM.elems ms) $ \(Member m) -> push fo m $ pullAudio dt n
+    ws <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ AudioRefresh dt n
     return $ foldr (zipWith (+)) (replicate n zero) ws
 
 push :: Foundation s -> MVar (Object e (System s)) -> e a -> IO a
@@ -182,24 +184,28 @@ push fo mc e = do
 keyCallback :: Foundation s -> GLFW.KeyCallback
 keyCallback fo _ k _ st _ = do
     ms <- readIORef (coreKeyboard fo)
-    forM_ (IM.elems ms) $ \(Member m) -> push fo m
-        $ keyEvent (toEnum . fromEnum $ k :: Key) (GLFW.KeyState'Released /= st)
+    forM_ (IM.elems ms) $ \(Member e m) -> push fo m
+        $ e $ request $ case st of
+            GLFW.KeyState'Released -> Up (toEnum . fromEnum $ k :: Key)
+            _ -> Down (toEnum . fromEnum $ k :: Key)
 
 mouseButtonCallback :: Foundation s -> GLFW.MouseButtonCallback
 mouseButtonCallback fo _ btn st _ = do
     ms <- readIORef (coreMouse fo)
-    forM_ (IM.elems ms) $ \(Member m) -> push fo m
-        $ mouseButtonEvent (fromEnum btn) (GLFW.MouseButtonState'Released /= st)
+    forM_ (IM.elems ms) $ \(Member e m) -> push fo m
+        $ e $ request $ case st of
+            GLFW.MouseButtonState'Released -> Button $ Up (fromEnum btn)
+            _ -> Button $ Down (fromEnum btn)
 
 cursorPosCallback :: Foundation s -> GLFW.CursorPosCallback
 cursorPosCallback fo _ x y = do
     ms <- readIORef (coreMouse fo)
-    forM_ (IM.elems ms) $ \(Member m) -> push fo m $ cursorEvent (V2 x y)
+    forM_ (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ Cursor (V2 x y)
 
 scrollCallback :: Foundation s -> GLFW.ScrollCallback
 scrollCallback fo _ x y = do
     ms <- readIORef (coreMouse fo)
-    forM_ (IM.elems ms) $ \(Member m) -> push fo m $ scrollEvent (V2 x y)
+    forM_ (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ Scroll (V2 x y)
 
 newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
 
@@ -210,18 +216,20 @@ instance Affine IO where
     scale = G.scale
 
 instance (Given TextureStorage) => Picture2D IO where
-    bitmap (Bitmap bmp h) = do
+    bitmap (Bitmap bmp ofs h) = do
         m <- readIORef (getTextureStorage given)
         case IM.lookup h m of
-            Just t -> G.drawTexture t
+            Just t -> G.drawTexture (fmap fromIntegral ofs) t
             Nothing -> do
                 t <- G.installTexture bmp
                 writeIORef (getTextureStorage given) $ IM.insert h t m
-                G.drawTexture t
-    bitmapOnce (Bitmap bmp _) = do
+                G.drawTexture (fmap fromIntegral ofs) t
+    bitmap Blank = return ()
+    bitmapOnce (Bitmap bmp ofs _) = do
         t <- G.installTexture bmp
-        G.drawTexture t
+        G.drawTexture (fmap fromIntegral ofs) t
         G.releaseTexture t
+    bitmapOnce Blank = return ()
 
     circle = G.circle
     circleOutline = G.circleOutline
