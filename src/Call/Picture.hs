@@ -15,6 +15,7 @@ import Call.Types
 import Call.Data.Bitmap
 import Data.Color
 import Control.Applicative
+import Data.Monoid
 
 infixr 5 `translate`
 infixr 5 `rotateR`
@@ -54,6 +55,10 @@ opacity :: Picture2D p => Float -> p a -> p a
 opacity a = color (Color 1 1 1 a)
 
 newtype Picture a = Picture { runPicture :: forall m. (Applicative m, Monad m, Picture2D m) => m a }
+
+instance Monoid a => Monoid (Picture a) where
+    mempty = return mempty
+    mappend p q = mappend <$> p <*> q
 
 instance Functor Picture where
     fmap f (Picture m) = Picture (fmap f m)

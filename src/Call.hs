@@ -42,7 +42,6 @@ module Call ( -- * System
     liftIO,
     -- * Utilities
     animate,
-    announce,
     transit,
     withSound,
     -- * Reexports

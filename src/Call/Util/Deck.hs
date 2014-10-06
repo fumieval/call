@@ -52,7 +52,7 @@ empty :: Monad m => Object Methods m
 empty = sharing handle $ Deck Nothing 0 1 False 44100 where -- FIXME: sample rate
 
 handle :: MonadState Deck m => Audio a -> m a
-handle (Request (dt0, n)) = use source >>= \case
+handle = acceptM $ \(dt0, n) -> use source >>= \case
   Just (Source s) -> do
     pl <- use playing
     t0 <- use pos
