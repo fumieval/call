@@ -28,7 +28,7 @@
 -- Portability :  non-portable
 --
 -----------------------------------------------------------------------------
-module Call.System (Graphic, Audio, Mouse, Keyboard, System, runSystem, MonadSystem(..), forkSystem) where
+module Call.System (System, ObjS, AddrS, runSystem, MonadSystem(..), forkSystem) where
 
 import Call.Data.Bitmap
 import Call.Picture
@@ -49,6 +49,9 @@ import qualified Data.IntMap.Strict as IM
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Call.Internal.PortAudio as PA
 import Unsafe.Coerce
+
+type ObjS e s = Object e (System s)
+type AddrS e s = Address e (System s)
 
 class (MonadIO m, MonadObjective m) => MonadSystem m where
   linkMouse :: Lift Mouse e => Address e m -> m ()
@@ -107,10 +110,10 @@ data Member e s where
 data Foundation s = Foundation
     { newObjectId :: MVar Int
     , sampleRate :: Double
-    , coreGraphic :: IORef (IM.IntMap (Member (Request WindowRefresh (Picture ())) s))
-    , coreAudio :: IORef (IM.IntMap (Member (Request AudioRefresh [V2 Float]) s))
-    , coreKeyboard :: IORef (IM.IntMap (Member (Request (Chatter Key) ()) s))
-    , coreMouse :: IORef (IM.IntMap (Member (Request MouseEvent ()) s))
+    , coreGraphic :: IORef (IM.IntMap (Member Graphic s))
+    , coreAudio :: IORef (IM.IntMap (Member Audio s))
+    , coreKeyboard :: IORef (IM.IntMap (Member Keyboard s))
+    , coreMouse :: IORef (IM.IntMap (Member Mouse s))
     , theTime :: MVar Double
     , theSystem :: G.System
     , targetFPS :: IORef Double
@@ -155,7 +158,7 @@ runGraphic fo t0 = do
     let t1 = t0 + 1/fps
     G.beginFrame (theSystem fo)
     ms <- readIORef (coreGraphic fo)
-    pics <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ WindowRefresh (1/fps) -- is it appropriate?
+    pics <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request (1/fps) -- is it appropriate?
     give (TextureStorage (textures fo)) $ mapM_ runPicture pics
     b <- G.endFrame (theSystem fo)
     
@@ -171,7 +174,7 @@ audioProcess :: Foundation s -> Int -> IO [V2 Float]
 audioProcess fo n = do
     let dt = fromIntegral n / sampleRate fo
     ms <- readIORef (coreAudio fo)
-    ws <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ AudioRefresh dt n
+    ws <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request (dt, n)
     return $ foldr (zipWith (+)) (replicate n zero) ws
 
 push :: Foundation s -> MVar (Object e (System s)) -> e a -> IO a

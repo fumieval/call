@@ -3,13 +3,15 @@ module Call ( -- * System
     Time,
     MonadObjective(..),
     (.&),
+    (.<<),
+    (.^>),
     System,
     runSystem,
     runSystemDefault,
     MonadSystem(..),
+    ObjS,
+    AddrS,
     -- * Events
-    WindowRefresh,
-    AudioRefresh,
     Chatter(..),
     MouseEvent(..),
     Graphic,
@@ -55,6 +57,7 @@ module Call ( -- * System
 
 import Call.TH
 import Call.Types
+import Call.Event
 import Call.Data.Bitmap
 import Call.Data.Wave
 import Call.Picture

@@ -18,7 +18,7 @@
 -- Decks that plays sounds
 --
 -----------------------------------------------------------------------------
-module Call.Util.Deck (empty, Deck, source, pos, pitch, playing, sampleRate) where
+module Call.Util.Deck (empty, Deck, Methods, source, pos, pitch, playing, sampleRate) where
 import Control.Lens
 import Linear
 import Call.Types
@@ -26,7 +26,7 @@ import Control.Monad.State.Strict
 import Call.Data.Wave
 import Control.Object
 import Data.OpenUnion1.Clean
-import Call.System
+import Call.Event
 
 data Deck = Deck
   { _src :: Maybe (Source (V2 Float))
@@ -35,6 +35,7 @@ data Deck = Deck
   , _playing :: !Bool
   , _sampleRate :: !Double }
 
+type Methods = State Deck |> Audio |> Nil
 --
 source :: Lens' Deck (Maybe (Source (V2 Float)))
 source f s = f (_src s) <&> \a -> s { _src = a }
@@ -47,11 +48,11 @@ playing f s = f (_playing s) <&> \a -> s { _playing = a }
 sampleRate :: Lens' Deck Double
 sampleRate f s = f (_sampleRate s) <&> \a -> s { _sampleRate = a }
 
-empty :: Monad m => Object (State Deck |> Audio |> Nil) m
+empty :: Monad m => Object Methods m
 empty = sharing handle $ Deck Nothing 0 1 False 44100 where -- FIXME: sample rate
 
 handle :: MonadState Deck m => Audio a -> m a
-handle (Request (AudioRefresh dt0 n) cont) = use source >>= \case
+handle (Request (dt0, n)) = use source >>= \case
   Just (Source s) -> do
     pl <- use playing
     t0 <- use pos
@@ -61,7 +62,7 @@ handle (Request (AudioRefresh dt0 n) cont) = use source >>= \case
       then do
         r <- use sampleRate
         pos += dt
-        return $ cont $ map s [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]
+        return $ map s [t0,t0 + dt / fromIntegral n..t0 + dt - 1 / r]
       else do
-        return $ cont $ replicate n zero
-  Nothing -> return $ cont $ replicate n zero
+        return $ replicate n zero
+  Nothing -> return $ replicate n zero

@@ -1,9 +1,10 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, GADTs #-}
 module Call.Util where
 import Control.Monad.Objective.Class
 import Control.Object
 import Call.System
 import Call.Types
+import Call.Event
 import Call.Data.Wave
 import Call.Picture
 import qualified Call.Util.Deck as Deck
@@ -19,15 +20,15 @@ announce :: MonadState [Object e Maybe] m => e a -> m [a]
 announce e = state $ unzip . catMaybes . map (flip runObject e)
 
 animate :: Monad m => (Time -> Picture ()) -> Object Graphic m
-animate f = go 0 where
-  go t = Object $ \(Request (WindowRefresh dt) cont) -> return (cont $ f t, go (t + dt))
+animate f = go (0 :: Double) where
+  go t = Object $ \(Request dt) -> return (f t, go (t + dt))
 
 transit :: MonadPlus m => Time -> (Time -> Picture ()) -> Object Graphic m
 transit len f = go 0 where
   go t
     | t >= len = Object $ const mzero
-    | otherwise = Object $ \(Request (WindowRefresh dt) cont) -> return
-      (cont $ f t, go (t + dt))
+    | otherwise = Object $ \(Request dt) -> return
+      (f (t / len), go (t + dt))
 
 withSound :: Source Stereo -> System s a -> System s a
 withSound src m = do

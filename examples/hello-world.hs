@@ -39,7 +39,7 @@ main = runSystemDefault $ do
   linkAudio deck
   new (meter deck) >>= linkGraphic
   new (handle deck) >>= linkKeyboard
-  src <- readWAVE "hello-world.wav"
+  src <- readWAVE "examples/hello-world.wav"
   deck .& source ?= src
   deck .& playing .= True
   stand

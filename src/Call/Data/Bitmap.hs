@@ -80,8 +80,6 @@ liftImage b@(C.Image _ _ r) = Bitmap b zero (V.foldl H.hashWithSalt 0 r)
 liftImage' :: MonadIO m => C.Image C.PixelRGBA8 -> m Bitmap
 liftImage' b = liftIO $ Bitmap b zero <$> randomIO
 
-
-
 -- | Load an image file.
 readFile :: MonadIO m => FilePath -> m Bitmap
 readFile path = liftIO $ Bitmap <$> C.readImageRGBA8 path <*> pure zero <*> randomIO
