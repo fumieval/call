@@ -40,7 +40,17 @@ import Control.Monad.ST
 
 data Bitmap = Blank | Bitmap { _image :: C.Image C.PixelRGBA8, _offset :: V2 Int, _hash :: Int }
 
-makeLenses ''Bitmap
+image :: Traversal' Bitmap (C.Image C.PixelRGBA8)
+image _ Blank = pure Blank
+image f (Bitmap i o h) = f i <&> \i' -> Bitmap i' o h
+
+offset :: Traversal' Bitmap (V2 Int)
+offset _ Blank = pure Blank
+offset f (Bitmap i o h) = f o <&> \o' -> Bitmap i o' h
+
+hash :: Traversal' Bitmap Int
+hash _ Blank = pure Blank
+hash f (Bitmap i o h) = f h <&> \h' -> Bitmap i o h'
 
 -- | `mappend` stitches the right operand to the left
 instance Monoid Bitmap where
