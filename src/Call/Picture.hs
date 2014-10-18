@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, DeriveFunctor, Rank2Types #-}
+{-# LANGUAGE BangPatterns, DeriveFunctor, Rank2Types, FlexibleInstances, UndecidableInstances, ScopedTypeVariables #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Call.Picture
@@ -16,6 +16,8 @@ import Call.Data.Bitmap
 import Data.Color
 import Control.Applicative
 import Data.Monoid
+import Control.Object
+import Data.OpenUnion1.Clean
 
 infixr 5 `translate`
 infixr 5 `rotateR`
@@ -25,36 +27,37 @@ infixr 5 `color`
 infixr 5 `thickness`
 infixr 5 `blendMode`
 
-class Functor p => Affine p where
-    -- | (radians)
-    rotateR :: Double -> p a -> p a
-    -- | (degrees)
-    rotateD :: Double -> p a -> p a
-    scale :: Vec2 -> p a -> p a
-    translate :: Vec2 -> p a -> p a
+class Affine a where
+    type Vec a :: *
+    type Normal a :: * 
+    rotateOn :: Normal -> a -> a
+    scale :: Vec -> a -> a
+    translate :: Vec -> a -> a
 
-    rotateR = rotateD . (* 180) . (/ pi)
-    rotateD = rotateR . (/ 180) . (* pi)
+class Affine a => Picture a where
+    line :: [Vec] -> a
+    polygon :: [Vec] -> a
+    polygonOutline :: [Vec] -> a
+    circle :: Normal -> a
+    circleOutline :: Normal -> a
+    bitmapToward :: Normal -> Bitmap -> a
+    polygonWith :: Bitmap -> [(V2 Double, Vec)] -> a
 
--- | The class of types that can be regarded as a kind of picture.
-class Affine p => Picture2D p where
-    -- | Construct a 'Picture2D' from a 'Bitmap'.
-    bitmap :: Bitmap -> p ()
-    -- | Same as 'bitmap', but it does not create a cache.
-    bitmapOnce :: Bitmap -> p ()
-    line :: [Vec2] -> p ()
-    polygon :: [Vec2] -> p ()
-    polygonOutline :: [Vec2] -> p ()
-    circle :: Double -> p ()
-    circleOutline :: Double -> p ()
-    thickness :: Float -> p a -> p a
-    color :: Color -> p a -> p a
-    blendMode :: BlendMode -> p a -> p a
+bitmap = bitmapToward 1
 
-opacity :: Picture2D p => Float -> p a -> p a
+class Decorate a where
+    thickness :: Float -> a -> a
+    color :: Color -> a -> a
+    blendMode :: BlendMode -> a -> a
+
+class Affine a => Perspective a where
+    viewFromTo :: Double -> Vec -> Normal -> a -> a
+
+class Affine a => Lighting a where
+    light :: Normal -> Double -> a
+
+opacity :: Decorate a => Float -> a -> a
 opacity a = color (Color 1 1 1 a)
-
-newtype Picture a = Picture { runPicture :: forall m. (Applicative m, Monad m, Picture2D m) => m a }
 
 instance Monoid a => Monoid (Picture a) where
     mempty = return mempty
@@ -71,20 +74,5 @@ instance Monad Picture where
     return a = Picture (return a)
     Picture m >>= k = Picture (m >>= runPicture . k)
 
-instance Affine Picture where
-    rotateR t (Picture m) = Picture (rotateR t m)
-    rotateD t (Picture m) = Picture (rotateD t m)
-    scale v (Picture m) = Picture (scale v m)
-    translate v (Picture m) = Picture (translate v m)
-
-instance Picture2D Picture where
-    bitmap b = Picture (bitmap b)
-    bitmapOnce b = Picture (bitmapOnce b)
-    line vs = Picture (line vs)
-    polygon vs = Picture (polygon vs)
-    polygonOutline vs = Picture (polygonOutline vs)
-    circle r = Picture (circle r)
-    circleOutline r = Picture (circleOutline r)
-    thickness t (Picture m) = Picture (thickness t m)
-    color c (Picture m) = Picture (color c m)
-    blendMode b (Picture m) = Picture (blendMode b m)
+mapResponse :: (c -> b) -> Request a b r -> Request a c r
+mapResponse f (Request a cont) = Request a (cont . f)
