@@ -18,10 +18,13 @@ import Control.Lens
 import Data.Color
 import Data.IORef
 import Call.Types
+import Call.Picture (Vertex)
 import Data.BoundingBox
+import Control.Monad
 import Graphics.Rendering.OpenGL.GL.StateVar
 import Graphics.Rendering.OpenGL.Raw.ARB.Compatibility
 import Linear
+import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
@@ -30,11 +33,15 @@ import qualified Data.Vector.Storable.Mutable as MV
 import Codec.Picture
 import Codec.Picture.RGBA8
 import qualified GHC.IO.Encoding as Encoding
-
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
+import Foreign.C (CFloat)
+import Foreign (Ptr, castPtr, nullPtr, plusPtr, sizeOf, with)
 data System = System
-    { refRegion :: IORef BoundingBox2
-    , theWindow :: GLFW.Window
-    }
+  { refRegion :: IORef BoundingBox2
+  , theWindow :: GLFW.Window
+  , theProgram :: GL.Program
+  }
 
 type Texture = (GL.TextureObject, Double, Double)
 
@@ -44,31 +51,11 @@ runVertices = liftIO . mapM_ (GL.vertex . mkVertex2)
 
 preservingMatrix' :: MonadIO m => m a -> m a
 preservingMatrix' m = do
-    liftIO glPushMatrix
-    r <- m
-    liftIO glPopMatrix
-    return r
+  liftIO glPushMatrix
+  r <- m
+  liftIO glPopMatrix
+  return r
 {-# INLINE preservingMatrix' #-}
-
-drawTexture :: V2 Double -> Texture -> IO ()
-drawTexture (V2 x y) (tex, !w, !h) = drawTextureAt tex (V2 (x-w) (y-h)) (V2 (x+w) (y-h)) (V2 (x+w) (y+h)) (V2 (x-w) (y+h))
-{-# INLINE drawTexture #-}
-
-drawTextureAt :: GL.TextureObject -> V2 Double -> V2 Double -> V2 Double -> V2 Double -> IO ()
-drawTextureAt tex a b c d = do
-    GL.texture GL.Texture2D $= GL.Enabled
-    GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
-    GL.textureBinding GL.Texture2D $= Just tex
-    GL.unsafeRenderPrimitive GL.TriangleStrip $ do
-        GL.texCoord $ GL.TexCoord2 (0 :: GL.GLdouble) 0
-        GL.vertex $ mkVertex2 a
-        GL.texCoord $ GL.TexCoord2 (1 :: GL.GLdouble) 0
-        GL.vertex $ mkVertex2 b
-        GL.texCoord $ GL.TexCoord2 (0 :: GL.GLdouble) 1
-        GL.vertex $ mkVertex2 d
-        GL.texCoord $ GL.TexCoord2 (1 :: GL.GLdouble) 1
-        GL.vertex $ mkVertex2 c
-    GL.texture GL.Texture2D $= GL.Disabled
 
 mkVertex2 :: V2 Double -> GL.Vertex2 GL.GLdouble
 {-# INLINE mkVertex2 #-}
@@ -86,125 +73,159 @@ gsizei :: Int -> GL.GLsizei
 {-# INLINE gsizei #-}
 gsizei = unsafeCoerce
 
-translate :: V2 Double -> IO a -> IO a
-translate (V2 tx ty) m = preservingMatrix' $ GL.translate (GL.Vector3 (gd tx) (gd ty) 0) >> m
-
-rotateD :: Double -> IO a -> IO a
-rotateD theta m = preservingMatrix' $ GL.rotate (gd (-theta)) (GL.Vector3 0 0 1) >> m
-
-scale :: V2 Double -> IO a -> IO a
-scale (V2 sx sy) m = preservingMatrix' $ GL.scale (gd sx) (gd sy) 1 >> m
-
-circle :: Double -> IO ()
-circle r = do
-    let s = 2 * pi / 64
-    GL.renderPrimitive GL.Polygon $ runVertices [V2 (cos t * r) (sin t * r) | t <- [0,s..2 * pi]]
-
-circleOutline :: Double -> IO ()
-circleOutline r = do
-    let s = 2 * pi / 64
-    GL.renderPrimitive GL.LineLoop $ runVertices [V2 (cos t * r) (sin t * r) | t <- [0,s..2 * pi]]
-
 color :: Color -> IO a -> IO a
 color col m = do
-    oldColor <- liftIO $ get GL.currentColor
-    liftIO $ GL.currentColor $= unsafeCoerce col
-    res <- m
-    liftIO $ GL.currentColor $= oldColor
-    return res
-
-polygon :: [V2 Double] -> IO ()
-polygon path = GL.renderPrimitive GL.Polygon $ runVertices path
-
-polygonOutline :: [V2 Double] -> IO ()
-polygonOutline path = GL.renderPrimitive GL.LineLoop $ runVertices path
-
-line :: [V2 Double] -> IO ()
-line path = GL.renderPrimitive GL.LineStrip $ runVertices path
+  oldColor <- liftIO $ get GL.currentColor
+  liftIO $ GL.currentColor $= unsafeCoerce col
+  res <- m
+  liftIO $ GL.currentColor $= oldColor
+  return res
 
 thickness :: Float -> IO a -> IO a
 thickness t m = do
-    oldWidth <- liftIO $ get GL.lineWidth
-    liftIO $ GL.lineWidth $= gf t
-    res <- m
-    liftIO $ GL.lineWidth $= oldWidth
-    return res
+  oldWidth <- liftIO $ get GL.lineWidth
+  liftIO $ GL.lineWidth $= gf t
+  res <- m
+  liftIO $ GL.lineWidth $= oldWidth
+  return res
 
 installTexture :: Image PixelRGBA8 -> IO Texture
 installTexture (Image w h v) = do
-    [tex] <- GL.genObjectNames 1
-    GL.textureBinding GL.Texture2D GL.$= Just tex
-    let siz = GL.TextureSize2D (gsizei w) (gsizei h)
-    V.unsafeWith v
-        $ GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGBA8 siz 0
-        . GL.PixelData GL.ABGR GL.UnsignedInt8888
-    return (tex, fromIntegral w / 2, fromIntegral h / 2)
+  [tex] <- GL.genObjectNames 1
+  GL.textureBinding GL.Texture2D GL.$= Just tex
+  let siz = GL.TextureSize2D (gsizei w) (gsizei h)
+  V.unsafeWith v
+    $ GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGBA8 siz 0
+    . GL.PixelData GL.ABGR GL.UnsignedInt8888
+  return (tex, fromIntegral w / 2, fromIntegral h / 2)
 
 releaseTexture :: Texture -> IO ()
 releaseTexture (tex, _, _) = GL.deleteObjectNames [tex]
 
 beginFrame :: System -> IO ()
 beginFrame sys = do
-    Box (V2 wl wt) (V2 wr wb) <- fmap realToFrac <$> readIORef (refRegion sys)
-    GL.viewport $= (GL.Position 0 0, GL.Size (floor $ wr - wl) (floor $ wb - wt))
-    GL.matrixMode $= GL.Projection
-    GL.loadIdentity
-    GL.ortho wl wr wb wt 0 (-100)
-    GL.matrixMode $= GL.Modelview 0
-    GL.clear [GL.ColorBuffer]
+  -- Box (V2 wl wt) (V2 wr wb) <- fmap realToFrac <$> readIORef (refRegion sys)
+  GL.clear [GL.ColorBuffer, GL.DepthBuffer]
 
 endFrame :: System -> IO Bool
 endFrame sys = do
-    GLFW.swapBuffers $ theWindow sys
-    GLFW.pollEvents
-    GLFW.windowShouldClose (theWindow sys)
+  GLFW.swapBuffers $ theWindow sys
+  GLFW.pollEvents
+  GLFW.windowShouldClose (theWindow sys)
 
 beginGLFW :: WindowMode -> BoundingBox2 -> IO System
 beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
-    Encoding.setForeignEncoding Encoding.utf8
-    let title = "call"
-        ww = floor $ x1 - x0
-        wh = floor $ y1 - y0
-    () <- unlessM GLFW.init (fail "Failed to initialize")
+  Encoding.setForeignEncoding Encoding.utf8
+  let title = "call"
+      ww = floor $ x1 - x0
+      wh = floor $ y1 - y0
+  () <- unlessM GLFW.init (fail "Failed to initialize")
 
-    mon <- case mode of
-        FullScreen -> GLFW.getPrimaryMonitor
-        _ -> return Nothing
+  mon <- case mode of
+    FullScreen -> GLFW.getPrimaryMonitor
+    _ -> return Nothing
 
-    GLFW.windowHint $ GLFW.WindowHint'Resizable $ mode == Resizable
-    win <- GLFW.createWindow ww wh title mon Nothing >>= maybe (fail "Failed to create a window") return
-    GLFW.makeContextCurrent (Just win)
-    GL.lineSmooth $= GL.Enabled
-    GL.blend      $= GL.Enabled
-    GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
-    -- GL.shadeModel $= GL.Flat
-    GL.textureFunction $= GL.Combine
+  GLFW.windowHint $ GLFW.WindowHint'Resizable $ mode == Resizable
+  win <- GLFW.createWindow ww wh title mon Nothing >>= maybe (fail "Failed to create a window") return
+  GLFW.makeContextCurrent (Just win)
+  prog <- initializeGL
+  GL.lineSmooth $= GL.Enabled
+  GL.blend      $= GL.Enabled
+  GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
+  GL.textureFunction $= GL.Combine
+  GLFW.swapInterval 1
+  -- GL.clearColor $= GL.Color4 1 1 1 1
+  GL.clearColor $= GL.Color4 0.5 0.2 1 1
 
-    GLFW.swapInterval 1
-    GL.clearColor $= GL.Color4 1 1 1 1
+  rbox <- newIORef bbox
 
-    rbox <- newIORef bbox
+  GLFW.setFramebufferSizeCallback win $ Just $ \_ w h -> do
+      modifyIORef rbox $ size zero .~ fmap fromIntegral (V2 w h)
 
-    GLFW.setFramebufferSizeCallback win $ Just $ \_ w h -> do
-        modifyIORef rbox $ size zero .~ fmap fromIntegral (V2 w h)
+  return $ System rbox win prog
 
-    return $ System rbox win
+initializeGL = do
+  let vertexAttribute = GL.AttribLocation 0
+  let uvAttribute = GL.AttribLocation 1
+  cubeVao <- GL.genObjectName
+  cubeVbo <- GL.genObjectName
+
+  GL.bindVertexArrayObject $= Just cubeVao
+  GL.bindBuffer GL.ArrayBuffer $= Just cubeVbo
+
+  let stride = fromIntegral $ sizeOf (undefined :: Vertex)
+
+  GL.vertexAttribPointer vertexAttribute $=
+    (GL.ToFloat,GL.VertexArrayDescriptor 3 GL.Float stride nullPtr)
+
+  GL.vertexAttribArray vertexAttribute $= GL.Enabled
+  GL.bindBuffer GL.ArrayBuffer $= Just cubeVbo
+
+  GL.vertexAttribArray uvAttribute $= GL.Enabled
+
+  GL.vertexAttribPointer uvAttribute $=
+    (GL.ToFloat
+    ,GL.VertexArrayDescriptor 2 GL.Float stride (nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)))
+
+  vertexShader <- GL.createShader GL.VertexShader
+  fragmentShader <- GL.createShader GL.FragmentShader
+
+  GL.shaderSourceBS vertexShader $= Text.encodeUtf8
+    (Text.pack $ unlines
+      [ "#version 330"
+      , "uniform mat4 projection;"
+      , "uniform mat4 model;"
+      , "out vec2 UV;"
+      , "in vec3 in_Position;"
+      , "in vec2 in_UV;"
+      , "void main(void) {"
+      , "  gl_Position = projection * model * vec4(in_Position, 1.0);"
+      , "  UV = in_UV;"
+      , "}"
+      ])
+    
+  GL.shaderSourceBS fragmentShader $= Text.encodeUtf8
+    (Text.pack $ unlines
+      [ "#version 330"
+      , "in vec2 UV;"
+      , "out vec4 fragColor;"
+      , "uniform sampler2D tex;"
+      , "void main(void){"
+      , "  fragColor = texture( tex, UV ).rgba;"
+      , "}"
+      ])
+    
+
+  GL.compileShader vertexShader
+  GL.compileShader fragmentShader
+  shaderProg <- GL.createProgram
+  GL.attachShader shaderProg vertexShader
+  GL.attachShader shaderProg fragmentShader
+  GL.attribLocation shaderProg "in_Position" $= vertexAttribute
+  GL.attribLocation shaderProg "in_UV" $= uvAttribute
+  GL.linkProgram shaderProg
+  GL.currentProgram $= Just shaderProg
+
+  linked <- GL.get (GL.linkStatus shaderProg)
+  unless linked $ do
+    GL.get (GL.programInfoLog shaderProg) >>= putStrLn
+  return shaderProg
 
 endGLFW :: System -> IO ()
 endGLFW sys = do
-    GLFW.destroyWindow (theWindow sys)
-    GLFW.terminate
+  GLFW.destroyWindow (theWindow sys)
+  GLFW.terminate
 
 screenshotFlipped :: System -> IO (Image PixelRGBA8)
 screenshotFlipped sys = do
-    V2 w h <- fmap floor <$> view (size zero) <$> readIORef (refRegion sys)
-    mv <- MV.unsafeNew (w * h * 4)
-    GL.readBuffer $= GL.FrontBuffers
-    MV.unsafeWith mv
-        $ \ptr -> GL.readPixels (GL.Position 0 0) (GL.Size (gsizei w) (gsizei h))
-            (GL.PixelData GL.RGBA GL.UnsignedByte ptr)
+  V2 w h <- fmap floor <$> view (size zero) <$> readIORef (refRegion sys)
+  mv <- MV.unsafeNew (w * h * 4)
+  GL.readBuffer $= GL.FrontBuffers
+  MV.unsafeWith mv
+      $ \ptr -> GL.readPixels (GL.Position 0 0) (GL.Size (gsizei w) (gsizei h))
+          (GL.PixelData GL.RGBA GL.UnsignedByte ptr)
 
-    Image w h <$> V.unsafeFreeze mv
+  Image w h <$> V.unsafeFreeze mv
 
 screenshot :: System -> IO (Image PixelRGBA8)
 screenshot sys = flipVertically <$> screenshotFlipped sys
@@ -218,8 +239,8 @@ blendMode2BlendingFactors Screen = (GL.One, GL.OneMinusSrcColor)
 
 blendMode :: BlendMode -> IO a -> IO a
 blendMode mode m = do
-    oldFunc <- get GL.blendFunc
-    GL.blendFunc $= blendMode2BlendingFactors mode
-    a <- m
-    GL.blendFunc $= oldFunc
-    return a
+  oldFunc <- get GL.blendFunc
+  GL.blendFunc $= blendMode2BlendingFactors mode
+  a <- m
+  GL.blendFunc $= oldFunc
+  return a

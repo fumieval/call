@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, DeriveFunctor, Rank2Types, FlexibleInstances, UndecidableInstances, ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, BangPatterns, DeriveFunctor, Rank2Types, FlexibleInstances, UndecidableInstances, ScopedTypeVariables #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Call.Picture
@@ -18,61 +18,58 @@ import Control.Applicative
 import Data.Monoid
 import Control.Object
 import Data.OpenUnion1.Clean
-
-infixr 5 `translate`
-infixr 5 `rotateR`
-infixr 5 `rotateD`
-infixr 5 `scale`
-infixr 5 `color`
-infixr 5 `thickness`
-infixr 5 `blendMode`
+import Linear
+import Linear.Matrix
+import Foreign.C (CFloat)
+import Foreign.Storable
+import Foreign.Ptr
+import qualified Data.Vector.Storable as V
 
 class Affine a where
     type Vec a :: *
     type Normal a :: * 
-    rotateOn :: Normal -> a -> a
-    scale :: Vec -> a -> a
-    translate :: Vec -> a -> a
+    rotateOn :: Normal a -> a -> a
+    scale :: Vec a -> a -> a
+    translate :: Vec a -> a -> a
 
-class Affine a => Picture a where
-    line :: [Vec] -> a
-    polygon :: [Vec] -> a
-    polygonOutline :: [Vec] -> a
-    circle :: Normal -> a
-    circleOutline :: Normal -> a
-    bitmapToward :: Normal -> Bitmap -> a
-    polygonWith :: Bitmap -> [(V2 Double, Vec)] -> a
+class Affine a => Figure a where
+    line :: [Vec a] -> a
+    polygon :: [Vec a] -> a
+    polygonOutline :: [Vec a] -> a
+    circle :: Normal a -> a
+    circleOutline :: Normal a -> a
+    bitmapToward :: Normal a -> Bitmap -> a
 
+bitmap :: (Figure a, Num (Normal a)) => Bitmap -> a
 bitmap = bitmapToward 1
 
-class Decorate a where
-    thickness :: Float -> a -> a
-    color :: Color -> a -> a
-    blendMode :: BlendMode -> a -> a
-
-class Affine a => Perspective a where
-    viewFromTo :: Double -> Vec -> Normal -> a -> a
-
-class Affine a => Lighting a where
-    light :: Normal -> Double -> a
-
-opacity :: Decorate a => Float -> a -> a
-opacity a = color (Color 1 1 1 a)
-
-instance Monoid a => Monoid (Picture a) where
-    mempty = return mempty
-    mappend p q = mappend <$> p <*> q
-
-instance Functor Picture where
-    fmap f (Picture m) = Picture (fmap f m)
-
-instance Applicative Picture where
-    pure a = Picture (pure a)
-    Picture a <*> Picture b = Picture (a <*> b)
-
-instance Monad Picture where
-    return a = Picture (return a)
-    Picture m >>= k = Picture (m >>= runPicture . k)
+newtype Picture = Picture { unPicture :: forall r.
+    r
+    -> (r -> r -> r)
+    -> (Bitmap -> V.Vector Vertex -> r)
+    -> (M44 CFloat -> r -> r)
+    -> (M44 CFloat -> r -> r)
+    -> r
+    }
 
 mapResponse :: (c -> b) -> Request a b r -> Request a c r
 mapResponse f (Request a cont) = Request a (cont . f)
+
+data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 CFloat), vUV :: {-# UNPACK #-} !(V2 CFloat)}
+
+instance Storable Vertex where
+    sizeOf _ = sizeOf (undefined :: V3 CFloat) + sizeOf (undefined :: V2 CFloat)
+    alignment _ = 0
+    peek ptr = Vertex <$> peek (castPtr ptr) <*> peek (castPtr $ ptr `plusPtr` sizeOf (vPos undefined))
+    poke ptr (Vertex v t) = do
+        poke (castPtr ptr) v
+        poke (castPtr ptr  `plusPtr` sizeOf (vPos undefined)) v
+
+vertices :: Bitmap -> V.Vector Vertex -> Picture
+vertices b v = Picture $ \_ _ f _ _ -> f b v
+
+transform :: M44 CFloat -> Picture -> Picture
+transform m (Picture pic) = Picture $ \e a f p t -> t m (pic e a f p t)
+
+projectPicture :: M44 CFloat -> Picture -> Picture
+projectPicture m (Picture pic) = Picture $ \e a f p t -> p m (pic e a f p t)

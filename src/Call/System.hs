@@ -48,7 +48,14 @@ import qualified Call.Internal.GLFW as G
 import qualified Data.IntMap.Strict as IM
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Call.Internal.PortAudio as PA
+import Graphics.Rendering.OpenGL.GL.StateVar
+import qualified Graphics.Rendering.OpenGL.Raw as GL
+import qualified Graphics.Rendering.OpenGL.GL as GL
 import Unsafe.Coerce
+import Foreign (Ptr, castPtr, nullPtr, sizeOf, with)
+import Foreign.C (CFloat)
+import qualified Data.Vector.Storable as V
+import Data.Distributive (distribute)
 
 type ObjS e s = Object e (System s)
 type AddrS e s = Address e (System s)
@@ -159,7 +166,7 @@ runGraphic fo t0 = do
     G.beginFrame (theSystem fo)
     ms <- readIORef (coreGraphic fo)
     pics <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request (1/fps) -- is it appropriate?
-    give (TextureStorage (textures fo)) $ mapM_ runPicture pics
+    give (TextureStorage (textures fo)) $ mapM_ (drawPicture fo) pics
     b <- G.endFrame (theSystem fo)
     
     Just t' <- GLFW.getTime
@@ -212,12 +219,7 @@ scrollCallback fo _ x y = do
 
 newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
 
-instance Affine IO where
-    translate = G.translate
-    rotateD = G.rotateD
-    rotateR t = let t' = t / pi * 180 in G.rotateD t'
-    scale = G.scale
-
+{-
 instance (Given TextureStorage) => Picture2D IO where
     bitmap (Bitmap bmp ofs h) = do
         m <- readIORef (getTextureStorage given)
@@ -227,18 +229,38 @@ instance (Given TextureStorage) => Picture2D IO where
                 t <- G.installTexture bmp
                 writeIORef (getTextureStorage given) $ IM.insert h t m
                 G.drawTexture (fmap fromIntegral ofs) t
-    bitmap Blank = return ()
-    bitmapOnce (Bitmap bmp ofs _) = do
-        t <- G.installTexture bmp
-        G.drawTexture (fmap fromIntegral ofs) t
-        G.releaseTexture t
-    bitmapOnce Blank = return ()
+-}
 
-    circle = G.circle
-    circleOutline = G.circleOutline
-    polygon = G.polygon
-    polygonOutline = G.polygonOutline
-    line = G.line
-    thickness = G.thickness
-    color = G.color
-    blendMode = G.blendMode
+
+drawPicture :: Given TextureStorage => Foundation s -> Picture -> IO ()
+drawPicture fo (Picture p) = p (return ()) (>>) draw proj trans where
+  shaderProg = G.theProgram $ theSystem fo
+  draw Blank vertices = do
+    V.unsafeWith vertices $ \v -> GL.bufferData GL.ArrayBuffer $=
+      (fromIntegral $ V.length vertices * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
+    GL.drawArrays GL.TriangleStrip 0 $ fromIntegral $ V.length vertices
+  draw (Bitmap bmp _ h) vertices = do
+    st <- readIORef (getTextureStorage given)
+    (tex, _, _) <- case IM.lookup h st of
+      Just t -> return t
+      Nothing -> do
+          t <- G.installTexture bmp
+          writeIORef (getTextureStorage given) $ IM.insert h t st
+          return t
+    GL.texture GL.Texture2D $= GL.Enabled
+    GL.textureFilter GL.Texture2D $= ((GL.Nearest, Nothing), GL.Nearest)
+    GL.textureBinding GL.Texture2D $= Just tex
+    
+    V.unsafeWith vertices $ \v -> GL.bufferData GL.ArrayBuffer $=
+      (fromIntegral $ V.length vertices * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
+    GL.drawArrays GL.TriangleStrip 0 $ fromIntegral $ V.length vertices
+
+    GL.texture GL.Texture2D $= GL.Disabled
+  trans mat m = do
+    GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "model")
+    with (distribute mat) $ \ptr -> GL.glUniformMatrix4fv loc 1 0 (castPtr (ptr :: Ptr (M44 CFloat)))
+    m
+  proj mat m = do
+    GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
+    with mat $ \ptr -> GL.glUniformMatrix4fv loc 1 0 $ castPtr (ptr :: Ptr (M44 CFloat))
+    m
