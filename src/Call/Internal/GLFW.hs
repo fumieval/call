@@ -22,7 +22,6 @@ import Call.Picture (Vertex)
 import Data.BoundingBox
 import Control.Monad
 import Graphics.Rendering.OpenGL.GL.StateVar
-import Graphics.Rendering.OpenGL.Raw.ARB.Compatibility
 import Linear
 import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.Rendering.OpenGL.GL as GL
@@ -36,7 +35,7 @@ import qualified GHC.IO.Encoding as Encoding
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.C (CFloat)
-import Foreign (Ptr, castPtr, nullPtr, plusPtr, sizeOf, with)
+import Foreign (nullPtr, plusPtr, sizeOf)
 data System = System
   { refRegion :: IORef BoundingBox2
   , theWindow :: GLFW.Window
@@ -45,29 +44,9 @@ data System = System
 
 type Texture = (GL.TextureObject, Double, Double)
 
-runVertices :: MonadIO m => [V2 Double] -> m ()
-runVertices = liftIO . mapM_ (GL.vertex . mkVertex2)
-{-# INLINE runVertices #-}
-
-preservingMatrix' :: MonadIO m => m a -> m a
-preservingMatrix' m = do
-  liftIO glPushMatrix
-  r <- m
-  liftIO glPopMatrix
-  return r
-{-# INLINE preservingMatrix' #-}
-
-mkVertex2 :: V2 Double -> GL.Vertex2 GL.GLdouble
-{-# INLINE mkVertex2 #-}
-mkVertex2 = unsafeCoerce
-
 gf :: Float -> GL.GLfloat
 {-# INLINE gf #-}
 gf = unsafeCoerce
-
-gd :: Double -> GL.GLdouble
-{-# INLINE gd #-}
-gd = unsafeCoerce
 
 gsizei :: Int -> GL.GLsizei
 {-# INLINE gsizei #-}
@@ -131,6 +110,9 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   prog <- initializeGL
   GL.lineSmooth $= GL.Enabled
   GL.blend      $= GL.Enabled
+  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
+  GL.depthMask $= GL.Enabled
+  GL.depthFunc $= Just GL.Lequal
   GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
   GL.textureFunction $= GL.Combine
   GLFW.swapInterval 1
@@ -144,6 +126,7 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   return $ System rbox win prog
 
+initializeGL :: IO GL.Program
 initializeGL = do
   let vertexAttribute = GL.AttribLocation 0
   let uvAttribute = GL.AttribLocation 1
@@ -161,11 +144,10 @@ initializeGL = do
   GL.vertexAttribArray vertexAttribute $= GL.Enabled
   GL.bindBuffer GL.ArrayBuffer $= Just cubeVbo
 
-  GL.vertexAttribArray uvAttribute $= GL.Enabled
-
   GL.vertexAttribPointer uvAttribute $=
     (GL.ToFloat
     ,GL.VertexArrayDescriptor 2 GL.Float stride (nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)))
+  GL.vertexAttribArray uvAttribute $= GL.Enabled
 
   vertexShader <- GL.createShader GL.VertexShader
   fragmentShader <- GL.createShader GL.FragmentShader

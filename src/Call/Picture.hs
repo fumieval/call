@@ -11,19 +11,15 @@
 --
 -----------------------------------------------------------------------------
 module Call.Picture where
-import Call.Types
 import Call.Data.Bitmap
-import Data.Color
 import Control.Applicative
 import Data.Monoid
 import Control.Object
-import Data.OpenUnion1.Clean
 import Linear
-import Linear.Matrix
-import Foreign.C (CFloat)
 import Foreign.Storable
 import Foreign.Ptr
 import qualified Data.Vector.Storable as V
+import Control.Lens
 
 class Affine a where
     type Vec a :: *
@@ -31,7 +27,7 @@ class Affine a where
     rotateOn :: Normal a -> a -> a
     scale :: Vec a -> a -> a
     translate :: Vec a -> a -> a
-
+{-
 class Affine a => Figure a where
     line :: [Vec a] -> a
     polygon :: [Vec a] -> a
@@ -42,34 +38,50 @@ class Affine a => Figure a where
 
 bitmap :: (Figure a, Num (Normal a)) => Bitmap -> a
 bitmap = bitmapToward 1
+-}
+
+instance Affine Picture where
+    type Vec Picture = V3 Float
+    type Normal Picture = V3 Float
+    rotateOn v = transformPicture $ m33_to_m44 $ fromQuaternion $ axisAngle v (norm v)
+    scale (V3 x y z) = transformPicture $ V4
+        (V4 x 0 0 0)
+        (V4 0 y 0 0)
+        (V4 0 0 z 0)
+        (V4 0 0 0 1)
+    translate v (Picture pic) = Picture $ \e a f p t -> t (translation +~ v) (pic e a f p t)
 
 newtype Picture = Picture { unPicture :: forall r.
     r
     -> (r -> r -> r)
     -> (Bitmap -> V.Vector Vertex -> r)
-    -> (M44 CFloat -> r -> r)
-    -> (M44 CFloat -> r -> r)
+    -> (M44 Float -> r -> r)
+    -> ((M44 Float -> M44 Float) -> r -> r)
     -> r
     }
+
+instance Monoid Picture where
+    mempty = Picture $ \e _ _ _ _ -> e
+    mappend (Picture x) (Picture y) = Picture $ \e a f p t -> a (x e a f p t) (y e a f p t)
 
 mapResponse :: (c -> b) -> Request a b r -> Request a c r
 mapResponse f (Request a cont) = Request a (cont . f)
 
-data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 CFloat), vUV :: {-# UNPACK #-} !(V2 CFloat)}
+data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 Float), vUV :: {-# UNPACK #-} !(V2 Float)}
 
 instance Storable Vertex where
-    sizeOf _ = sizeOf (undefined :: V3 CFloat) + sizeOf (undefined :: V2 CFloat)
+    sizeOf _ = sizeOf (undefined :: V3 Float) + sizeOf (undefined :: V2 Float)
     alignment _ = 0
     peek ptr = Vertex <$> peek (castPtr ptr) <*> peek (castPtr $ ptr `plusPtr` sizeOf (vPos undefined))
     poke ptr (Vertex v t) = do
         poke (castPtr ptr) v
-        poke (castPtr ptr  `plusPtr` sizeOf (vPos undefined)) v
+        poke (castPtr ptr `plusPtr` sizeOf (0 :: V3 Float)) t
 
 vertices :: Bitmap -> V.Vector Vertex -> Picture
 vertices b v = Picture $ \_ _ f _ _ -> f b v
 
-transform :: M44 CFloat -> Picture -> Picture
-transform m (Picture pic) = Picture $ \e a f p t -> t m (pic e a f p t)
+transformPicture :: M44 Float -> Picture -> Picture
+transformPicture m (Picture pic) = Picture $ \e a f p t -> t (!*! m) (pic e a f p t)
 
-projectPicture :: M44 CFloat -> Picture -> Picture
+projectPicture :: M44 Float -> Picture -> Picture
 projectPicture m (Picture pic) = Picture $ \e a f p t -> p m (pic e a f p t)

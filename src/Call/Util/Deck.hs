@@ -31,9 +31,9 @@ import Call.Event
 data Deck = Deck
   { _src :: Maybe (Source (V2 Float))
   , _pos :: !Time
-  , _pitch :: !Double
+  , _pitch :: !Float
   , _playing :: !Bool
-  , _sampleRate :: !Double }
+  , _sampleRate :: !Float }
 
 type Methods = State Deck |> Audio |> Nil
 --
@@ -45,7 +45,8 @@ pitch :: Lens' Deck Time
 pitch f s = f (_pitch s) <&> \a -> s { _pitch = a }
 playing :: Lens' Deck Bool
 playing f s = f (_playing s) <&> \a -> s { _playing = a }
-sampleRate :: Lens' Deck Double
+
+sampleRate :: Lens' Deck Float
 sampleRate f s = f (_sampleRate s) <&> \a -> s { _sampleRate = a }
 
 empty :: Monad m => Object Methods m

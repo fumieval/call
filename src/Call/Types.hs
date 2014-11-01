@@ -27,13 +27,13 @@ import Data.Typeable
 import Data.BoundingBox
 import Data.Char
 
-type Time = Double
+type Time = Float
 
 data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read)
 
-type Vec2 = V2 Double
+type Vec2 = V2 Float
 
-type BoundingBox2 = Box V2 Double
+type BoundingBox2 = Box V2 Float
 
 data Chatter a = Up a | Down a
 

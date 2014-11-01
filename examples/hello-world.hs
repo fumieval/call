@@ -37,8 +37,8 @@ meter deck = oneshot $ \(Request _ cont) -> do
 main = runSystemDefault $ do
   deck <- new Call.Util.Deck.empty
   linkAudio deck
-  new (meter deck) >>= linkGraphic
-  new (handle deck) >>= linkKeyboard
+  newGraphic (meter deck)
+  newKeyboard (handle deck)
   src <- readWAVE "examples/hello-world.wav"
   deck .& source ?= src
   deck .& playing .= True

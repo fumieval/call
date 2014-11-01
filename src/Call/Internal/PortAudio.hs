@@ -61,7 +61,7 @@ callback f (castPtr -> _) (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
   f n >>= pokeArray pout
   return c'paContinue
 
-with :: MonadIO m => Double -> Int -> (Int -> IO [V2 Float]) -> m a -> m a
+with :: MonadIO m => Float -> Int -> (Int -> IO [V2 Float]) -> m a -> m a
 with rate buf f m = do
     w c'Pa_Initialize
     cb <- liftIO $ mk'PaStreamCallback $ callback f

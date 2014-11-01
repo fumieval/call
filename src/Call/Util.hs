@@ -16,7 +16,7 @@ readBitmap :: MonadIO m => FilePath -> m Bitmap.Bitmap
 readBitmap = Bitmap.readFile
 
 animate :: Monad m => (Time -> Picture) -> Object Graphic m
-animate f = go (0 :: Double) where
+animate f = go (0 :: Float) where
   go t = Object $ \(Request dt cont) -> return (cont $ f t, go (t + dt))
 
 transit :: MonadPlus m => Time -> (Time -> Picture) -> Object Graphic m

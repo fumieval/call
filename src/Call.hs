@@ -7,6 +7,7 @@ module Call ( -- * System
     module Call.Types,
     module Call.TH,
     module Call.Event,
+    module Call.Data.Wave,
     -- * Reexports
     module Control.Monad,
     module Control.Applicative,
@@ -14,13 +15,14 @@ module Call ( -- * System
     module Data.Color,
     module Data.Color.Names,
     module Linear,
-    module Control.Object
+    module Control.Object,
+    module Control.Monad.Objective.Class,
+    module Control.Monad.IO.Class
 ) where
 
 import Call.TH
 import Call.Types
 import Call.Event
-import Call.Data.Bitmap
 import Call.Data.Wave
 import Call.Picture
 import Call.System
