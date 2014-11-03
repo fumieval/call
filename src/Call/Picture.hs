@@ -14,12 +14,12 @@ module Call.Picture where
 import Call.Data.Bitmap
 import Control.Applicative
 import Data.Monoid
-import Control.Object
 import Linear
 import Foreign.Storable
 import Foreign.Ptr
 import qualified Data.Vector.Storable as V
 import Control.Lens
+import qualified Graphics.Rendering.OpenGL.GL as GL
 
 class Affine a where
     type Vec a :: *
@@ -54,7 +54,7 @@ instance Affine Picture where
 newtype Picture = Picture { unPicture :: forall r.
     r
     -> (r -> r -> r)
-    -> (Bitmap -> V.Vector Vertex -> r)
+    -> (Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> r)
     -> (M44 Float -> r -> r)
     -> ((M44 Float -> M44 Float) -> r -> r)
     -> r
@@ -63,9 +63,6 @@ newtype Picture = Picture { unPicture :: forall r.
 instance Monoid Picture where
     mempty = Picture $ \e _ _ _ _ -> e
     mappend (Picture x) (Picture y) = Picture $ \e a f p t -> a (x e a f p t) (y e a f p t)
-
-mapResponse :: (c -> b) -> Request a b r -> Request a c r
-mapResponse f (Request a cont) = Request a (cont . f)
 
 data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 Float), vUV :: {-# UNPACK #-} !(V2 Float)}
 
@@ -77,8 +74,8 @@ instance Storable Vertex where
         poke (castPtr ptr) v
         poke (castPtr ptr `plusPtr` sizeOf (0 :: V3 Float)) t
 
-vertices :: Bitmap -> V.Vector Vertex -> Picture
-vertices b v = Picture $ \_ _ f _ _ -> f b v
+vertices :: Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> Picture
+vertices b m v = Picture $ \_ _ f _ _ -> f b m v
 
 transformPicture :: M44 Float -> Picture -> Picture
 transformPicture m (Picture pic) = Picture $ \e a f p t -> t (!*! m) (pic e a f p t)

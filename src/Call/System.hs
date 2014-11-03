@@ -243,11 +243,11 @@ newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap 
 drawPicture :: Given TextureStorage => Foundation s -> Picture -> IO ()
 drawPicture fo (Picture p) = p (pure $ return ()) (liftA2 (>>)) draw proj trans eye4 where
   shaderProg = G.theProgram $ theSystem fo
-  draw Blank vs _ = do
+  draw Blank mode vs _ = do
     V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
       (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-    GL.drawArrays GL.TriangleStrip 0 $ fromIntegral $ V.length vs
-  draw (Bitmap bmp _ h) vs _ = do
+    GL.drawArrays mode 0 $ fromIntegral $ V.length vs
+  draw (Bitmap bmp _ h) mode vs _ = do
     st <- readIORef (getTextureStorage given)
     (tex, _, _) <- case IM.lookup h st of
       Just t -> return t
@@ -261,7 +261,7 @@ drawPicture fo (Picture p) = p (pure $ return ()) (liftA2 (>>)) draw proj trans 
     
     V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
       (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-    GL.drawArrays GL.TriangleStrip 0 $ fromIntegral $ V.length vs
+    GL.drawArrays mode 0 $ fromIntegral $ V.length vs
 
     GL.texture GL.Texture2D $= GL.Disabled
   trans f m mat0 = do
