@@ -42,6 +42,9 @@ module Call.System (
   , keyPress
   , mousePosition
   , mouseButton
+  , enableCursor
+  , hideCursor
+  , disableCursor
   -- * Component
   , newGraphic
   , newAudio
@@ -82,6 +85,7 @@ import Unsafe.Coerce
 import Foreign (castPtr, sizeOf, with)
 import qualified Data.Vector.Storable as V
 import Data.BoundingBox (Box(..))
+import Paths_call
 
 type ObjS e s = Object e (System s)
 type AddrS e s = Address e (System s)
@@ -129,6 +133,9 @@ runSystem mode box m = do
   GLFW.setMouseButtonCallback win $ Just $ mouseButtonCallback f
   GLFW.setCursorPosCallback win $ Just $ cursorPosCallback f
   GLFW.setScrollCallback win $ Just $ scrollCallback f
+  GL.UniformLocation loc <- GL.get $ GL.uniformLocation (G.theProgram sys) "color"
+  with (V4 1 1 1 1 :: V4 Float) $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
+
   ref <- newEmptyMVar
   _ <- flip forkFinally (either throwIO (putMVar ref)) $ unSystem f m
   PA.with 44100 512 (audioProcess f) $ liftIO $ do
@@ -179,6 +186,15 @@ mousePosition :: System s (V2 Float)
 mousePosition = mkSystem $ \fo -> do
   (x, y) <- GLFW.getCursorPos (G.theWindow $ theSystem fo)
   return $ V2 (realToFrac x) (realToFrac y)
+
+hideCursor :: System s ()
+hideCursor = mkSystem $ \fo -> GLFW.setCursorInputMode (G.theWindow $ theSystem fo) GLFW.CursorInputMode'Hidden
+
+disableCursor :: System s ()
+disableCursor = mkSystem $ \fo -> GLFW.setCursorInputMode (G.theWindow $ theSystem fo) GLFW.CursorInputMode'Disabled
+
+enableCursor :: System s ()
+enableCursor = mkSystem $ \fo -> GLFW.setCursorInputMode (G.theWindow $ theSystem fo) GLFW.CursorInputMode'Normal
 
 mouseButton :: Int -> System s Bool
 mouseButton b = mkSystem $ \fo -> fmap (/=GLFW.MouseButtonState'Released)
@@ -280,14 +296,17 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj (Scene s) = do
   GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
   with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 0 $ castPtr ptr
-  s (pure $ return ()) (liftA2 (>>)) prim col trans (RGBA 1 1 1 1, 0)
+  GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "useTexture"
+  s (pure $ return ()) (liftA2 (>>)) (prim locT) col trans (RGBA 1 1 1 1, 0)
   where
     shaderProg = G.theProgram $ theSystem fo
-    prim Blank mode vs _ = do
+    prim locT Blank mode vs _ = do
+      GL.glUniform1i locT 0
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs
-    prim (Bitmap bmp _ h) mode vs _ = do
+    prim locT (Bitmap bmp _ h) mode vs _ = do
+      GL.glUniform1i locT 1
       st <- readIORef (getTextureStorage given)
       (tex, _, _) <- case IM.lookup h st of
         Just t -> return t
@@ -295,27 +314,25 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj (Scene s) = do
           t <- G.installTexture bmp
           writeIORef (getTextureStorage given) $ IM.insert h t st
           return t
-      GL.texture GL.Texture2D $= GL.Enabled
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
       
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs
-
-      GL.texture GL.Texture2D $= GL.Disabled
     trans f m (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "matrices"
       GL.UniformLocation locN <- GL.get $ GL.uniformLocation shaderProg "level" 
       with f $ \ptr -> GL.glUniformMatrix4fv (loc+n) 1 1 (castPtr ptr)
       GL.glUniform1i locN (unsafeCoerce $ n + 1)
       m (color0, n + 1)
+      GL.glUniform1i locN (unsafeCoerce n)
     col f m (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "color"
       let c = f color0
       with c $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)
       m (c, n)
-      with color0 $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)      
+      with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)      
 
 drawSight :: Given TextureStorage => Foundation s -> Sight -> IO ()
 drawSight fo (Sight s) = do

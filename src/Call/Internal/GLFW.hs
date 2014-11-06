@@ -31,9 +31,11 @@ import Codec.Picture
 import Codec.Picture.RGBA8
 import qualified GHC.IO.Encoding as Encoding
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.C (CFloat)
 import Foreign (nullPtr, plusPtr, sizeOf)
+import Paths_call
 data System = System
   { refRegion :: IORef BoundingBox2
   , theWindow :: GLFW.Window
@@ -49,14 +51,6 @@ gf = unsafeCoerce
 gsizei :: Int -> GL.GLsizei
 {-# INLINE gsizei #-}
 gsizei = unsafeCoerce
-
-thickness :: Float -> IO a -> IO a
-thickness t m = do
-  oldWidth <- liftIO $ get GL.lineWidth
-  liftIO $ GL.lineWidth $= gf t
-  res <- m
-  liftIO $ GL.lineWidth $= oldWidth
-  return res
 
 installTexture :: Image PixelRGBA8 -> IO Texture
 installTexture (Image w h v) = do
@@ -109,6 +103,12 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   return $ System rbox win prog
 
+compileShader path shader = do
+  src <- getDataFileName path >>= Text.readFile
+  GL.shaderSourceBS shader $= Text.encodeUtf8 src
+  GL.compileShader shader
+  GL.get (GL.shaderInfoLog shader) >>= putStrLn
+
 initializeGL :: IO GL.Program
 initializeGL = do
   let vertexAttribute = GL.AttribLocation 0
@@ -134,41 +134,8 @@ initializeGL = do
 
   vertexShader <- GL.createShader GL.VertexShader
   fragmentShader <- GL.createShader GL.FragmentShader
-
-  GL.shaderSourceBS vertexShader $= Text.encodeUtf8
-    (Text.pack $ unlines
-      [ "#version 330"
-      , "uniform mat4 projection;"
-      , "uniform mat4 matrices[13];"
-      , "uniform int level;"
-      , "out vec2 UV;"
-      , "in vec3 in_Position;"
-      , "in vec2 in_UV;"
-      , "void main(void) {"
-      , "  mat4 model = mat4(1.0);"
-      , "  for(int i=0; i < level; i++)"
-      , "  {"
-      , "    model *= matrices[i];"
-      , "  }"
-      , "  gl_Position = projection * model * vec4(in_Position, 1.0);"
-      , "  UV = in_UV;"
-      , "}"
-      ])
-    
-  GL.shaderSourceBS fragmentShader $= Text.encodeUtf8
-    (Text.pack $ unlines
-      [ "#version 330"
-      , "in vec2 UV;"
-      , "out vec4 fragColor;"
-      , "uniform sampler2D tex;"
-      , "uniform vec4 color = vec4(1,1,1,1);"
-      , "void main(void){"
-      , "  fragColor = texture( tex, UV ).rgba * color;"
-      , "}"
-      ])
-
-  GL.compileShader vertexShader
-  GL.compileShader fragmentShader
+  compileShader "shaders/vertex.glsl" vertexShader
+  compileShader "shaders/fragment.glsl" fragmentShader
   shaderProg <- GL.createProgram
   GL.attachShader shaderProg vertexShader
   GL.attachShader shaderProg fragmentShader

@@ -10,7 +10,9 @@ maintainer:          Fumiaki Kinoshita <fumiexcel@gmail.com>
 copyright:           (c) Fumiaki Kinoshita 2014
 category:            Game
 build-type:          Simple
--- extra-source-files:  
+data-files:
+  shaders/*.glsl
+  data/*.ttf
 cabal-version:       >=1.10
 
 flag BuildHelloWorld
@@ -31,6 +33,8 @@ library
     Call.Data.Bitmap
     Call.Util
     Call.Util.Deck
+  other-modules:
+    Paths_call
   ghc-options: -Wall -fexcess-precision -O2 -threaded
   other-extensions:    Rank2Types, DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveDataTypeable, TemplateHaskell, CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeSynonymInstances, ScopedTypeVariables, FlexibleInstances, FlexibleContexts, KindSignatures, TypeFamilies, BangPatterns, ViewPatterns, LambdaCase, DataKinds, GADTs
   build-depends:

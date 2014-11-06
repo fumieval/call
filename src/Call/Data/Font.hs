@@ -14,11 +14,11 @@
 module Call.Data.Font 
   ( Font
   , readFont
+  , defaultFont
   , fontBoundingBox
   , metricsAscent
   , metricsDescent
-  , charToBitmap
-  , RenderedChar(..)
+  , renderChar
   ) where
 
 import Control.Applicative
@@ -47,9 +47,15 @@ import Foreign.Ptr
 import System.IO.Unsafe
 import Codec.Picture
 import Codec.Picture.RGBA8
+import Paths_call
 
 -- | Font object
-data Font = Font FT_Face (Double, Double) (Box V2 Double) (IORef (M.Map (Double, Char) RenderedChar))
+data Font = Font FT_Face (Float, Float) (Box V2 Float)
+
+defaultFont :: Font
+defaultFont = unsafePerformIO $ do
+  path <- getDataFileName "data/VL-PGothic-Regular.ttf"
+  readFont path
 
 -- | Create a 'Font' from the given file.
 readFont :: MonadIO m => FilePath -> m Font
@@ -60,23 +66,22 @@ readFont path = liftIO $ alloca $ \p -> do
     asc <- peek (ascender f)
     desc <- peek (descender f)
     u <- fromIntegral <$> peek (units_per_EM f)
-    let box = fmap (/u) $ Box
-            (V2 (fromIntegral (xMin b)) (fromIntegral (yMin b)))
-            (V2 (fromIntegral (xMax b)) (fromIntegral (yMax b)))
-    Font f (fromIntegral asc/u, fromIntegral desc/u) box <$> newIORef M.empty
-
-
--- | Get the font's metrics.
-metricsAscent :: Font -> Double
-metricsAscent (Font _ (a, _) _ _) = a
+    let box = fmap ((/u).fromIntegral) $ Box
+            (V2 (xMin b) (yMin b))
+            (V2 (xMax b) (yMax b))
+    return $ Font f (fromIntegral asc/u, fromIntegral desc/u) box
 
 -- | Get the font's metrics.
-metricsDescent :: Font -> Double
-metricsDescent (Font _ (_, d) _ _) = d
+metricsAscent :: Font -> Float
+metricsAscent (Font _ (a, _) _) = a
 
--- | Get the font's boundingbox.
-fontBoundingBox :: Font -> Box V2 Double
-fontBoundingBox (Font _ _ b _) = b
+-- | Get the font's metrics.
+metricsDescent :: Font -> Float
+metricsDescent (Font _ (_, d) _) = d
+
+-- | Get the font's bounding box.
+fontBoundingBox :: Font -> Box V2 Float
+fontBoundingBox (Font _ _ b) = b
 
 runFreeType :: IO CInt -> IO ()
 runFreeType m = do
@@ -85,55 +90,37 @@ runFreeType m = do
 
 freeType :: FT_Library
 freeType = unsafePerformIO $ alloca $ \p -> do
-    runFreeType $ ft_Init_FreeType p
-    peek p
-
-data RenderedChar = RenderedChar
-    { charBitmap :: Bitmap
-    , charOffset :: V2 Double
-    ,　charAdvance :: Double
-    }
+  runFreeType $ ft_Init_FreeType p
+  peek p
 
 -- | The resolution used to render fonts.
 resolutionDPI :: Int
 resolutionDPI = 300
 
-charToBitmap :: MonadIO m => Font -> Double -> Char -> m RenderedChar
-charToBitmap (Font face _ _ refCache) pixel ch = liftIO $ do
-    let siz = pixel * 72 / fromIntegral resolutionDPI
-    cache <- liftIO $ readIORef refCache
-    case M.lookup (siz, ch) cache of
-        Just d -> return d
-        Nothing -> do
-            d <- liftIO $ render face siz ch
-            liftIO $ writeIORef refCache $ M.insert (siz, ch) d cache
-            return d
+renderChar :: Font -> Float -> Char -> IO (Bitmap, V2 Float, V2 Float)
+renderChar (Font face _ _) siz ch = do
+  let dpi = fromIntegral resolutionDPI
 
-render :: FT_Face -> Double -> Char -> IO RenderedChar
-render face siz ch = do
-    let dpi = fromIntegral resolutionDPI
+  runFreeType $ ft_Set_Char_Size face 0 (floor $ siz * 64) dpi dpi
+  
+  ix <- ft_Get_Char_Index face (fromIntegral $ fromEnum ch)
+  runFreeType $ ft_Load_Glyph face ix ft_LOAD_DEFAULT
 
-    runFreeType $ ft_Set_Char_Size face 0 (floor $ siz * 64) dpi dpi
-    
-    ix <- ft_Get_Char_Index face (fromIntegral $ fromEnum ch)
-    runFreeType $ ft_Load_Glyph face ix ft_LOAD_DEFAULT
+  slot <- peek $ glyph face
+  runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
 
-    slot <- peek $ glyph face
-    runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
+  bmp <- peek $ GS.bitmap slot
+  left <- fmap fromIntegral $ peek $ GS.bitmap_left slot
+  top <- fmap fromIntegral $ peek $ GS.bitmap_top slot
 
-    bmp <- peek $ GS.bitmap slot
-    left <- fmap fromIntegral $ peek $ GS.bitmap_left slot
-    top <- fmap fromIntegral $ peek $ GS.bitmap_top slot
+  let h = fromIntegral $ B.rows bmp
+      w = fromIntegral $ B.width bmp
+  
+  fptr <- newForeignPtr_ $ castPtr $ buffer bmp
 
-    let h = fromIntegral $ B.rows bmp
-        w = fromIntegral $ B.width bmp
-    
-    fptr <- newForeignPtr_ $ castPtr $ buffer bmp
-
-    adv <- peek $ GS.advance slot
-    b <- liftImage' $ fromColorAndOpacity (PixelRGB8 255 255 255)
-        $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
-    return $ RenderedChar
-        b
-        (V2 (left + fromIntegral w / 2) (-top + fromIntegral h / 2))
-        (fromIntegral (V.x adv) / 64)
+  adv <- peek $ GS.advance slot
+  b <- liftImage' $ fromColorAndOpacity (PixelRGB8 255 255 255)
+      $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
+  return (b
+    , V2 (left + fromIntegral w / 2) (-top + fromIntegral h / 2)
+    , V2 (fromIntegral (V.x adv) / 64) 0)

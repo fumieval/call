@@ -19,18 +19,17 @@
 --
 -----------------------------------------------------------------------------
 module Call.Sight (Affine(..)
-    , Figure(..)
-    , Picture(..)
-    , bitmap
-    , Scene(..)
-    , transformScene
-    , vertices
-    , toward
-    , Sight(..)
-    , clipSight
-    , viewSight
-    , viewSightFrom
-    , GL.PrimitiveMode(..)) where
+  , Figure(..)
+  , Picture(..)
+  , bitmap
+  , Scene(..)
+  , transformScene
+  , vertices
+  , toward
+  , Sight(..)
+  , viewPicture
+  , viewScene
+  , GL.PrimitiveMode(..)) where
 import qualified Call.Data.Bitmap as B
 import qualified Data.BoundingBox as X
 import Data.Monoid
@@ -126,12 +125,8 @@ newtype Sight = Sight { unSight
   -> r
   }
 
-clipSight :: Picture -> Sight
-clipSight (Picture s) = Sight $ \box@(X.Box (V2 x0 y0) (V2 x1 y1)) _ _ f -> f box (ortho x0 x1 y0 y1 0 (-100)) s
+viewPicture :: Picture -> Sight
+viewPicture (Picture s) = Sight $ \box@(X.Box (V2 x0 y0) (V2 x1 y1)) _ _ f -> f box (ortho x0 x1 y0 y1 0 (-100)) s
 
-viewSight :: Float -> Float -> Float -> Scene -> Sight
-viewSight fov near far s = Sight $ \box _ _ f -> f box (perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far) s
-
-viewSightFrom :: Float -> Float -> Float -> M44 Float -> Scene -> Sight
-viewSightFrom fov near far m s = Sight $ \box _ _ f -> f box (m !*! perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far) s
-
+viewScene :: Float -> Float -> Float -> Scene -> Sight
+viewScene fov near far s = Sight $ \box _ _ f -> f box (perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far) s
