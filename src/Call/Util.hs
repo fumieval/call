@@ -6,7 +6,7 @@ import Call.System
 import Call.Types
 import Call.Event
 import Call.Data.Wave
-import Call.Picture
+import Call.Sight
 import qualified Call.Util.Deck as Deck
 import Control.Lens
 import Control.Monad.State
@@ -15,11 +15,11 @@ import qualified Call.Data.Bitmap as Bitmap
 readBitmap :: MonadIO m => FilePath -> m Bitmap.Bitmap
 readBitmap = Bitmap.readFile
 
-animate :: Monad m => (Time -> Picture) -> Object Graphic m
+animate :: Monad m => (Time -> Sight) -> Object Graphic m
 animate f = go (0 :: Float) where
   go t = Object $ \(Request dt cont) -> return (cont $ f t, go (t + dt))
 
-transit :: MonadPlus m => Time -> (Time -> Picture) -> Object Graphic m
+transit :: MonadPlus m => Time -> (Time -> Sight) -> Object Graphic m
 transit len f = go 0 where
   go t
     | t >= len = Object $ const mzero

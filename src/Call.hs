@@ -1,7 +1,7 @@
 {-# LANGUAGE Rank2Types #-}
 module Call ( -- * System
     runSystemDefault,
-    module Call.Picture,
+    module Call.Sight,
     module Call.Util,
     module Call.System,
     module Call.Types,
@@ -24,7 +24,7 @@ import Call.TH
 import Call.Types
 import Call.Event
 import Call.Data.Wave
-import Call.Picture
+import Call.Sight
 import Call.System
 import Call.Util
 import Control.Monad.IO.Class

@@ -20,12 +20,16 @@ module Call.Types (
     , Key(..)
     , charToKey
     , BlendMode(..)
+    , Vertex(..)
     ) where
 
+import Control.Applicative
 import Linear
 import Data.Typeable
 import Data.BoundingBox
 import Data.Char
+import Foreign.Storable
+import Foreign.Ptr
 
 type Time = Float
 
@@ -190,3 +194,14 @@ data BlendMode = Normal
     | Multiply
     | Screen
     deriving (Enum, Eq, Ord, Read, Show, Typeable)
+
+data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 Float)
+  , vUV :: {-# UNPACK #-} !(V2 Float) }
+
+instance Storable Vertex where
+  sizeOf _ = sizeOf (undefined :: V3 Float) + sizeOf (undefined :: V2 Float)
+  alignment _ = 0
+  peek ptr = Vertex <$> peek (castPtr ptr) <*> peek (castPtr $ ptr `plusPtr` sizeOf (vPos undefined))
+  poke ptr (Vertex v t) = do
+      poke (castPtr ptr) v
+      poke (castPtr ptr `plusPtr` sizeOf (0 :: V3 Float)) t

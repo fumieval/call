@@ -15,10 +15,8 @@ import Control.Bool
 import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Lens
-import Data.Color
 import Data.IORef
 import Call.Types
-import Call.Picture (Vertex)
 import Data.BoundingBox
 import Control.Monad
 import Graphics.Rendering.OpenGL.GL.StateVar
@@ -51,14 +49,6 @@ gf = unsafeCoerce
 gsizei :: Int -> GL.GLsizei
 {-# INLINE gsizei #-}
 gsizei = unsafeCoerce
-
-color :: Color -> IO a -> IO a
-color col m = do
-  oldColor <- liftIO $ get GL.currentColor
-  liftIO $ GL.currentColor $= unsafeCoerce col
-  res <- m
-  liftIO $ GL.currentColor $= oldColor
-  return res
 
 thickness :: Float -> IO a -> IO a
 thickness t m = do
@@ -108,17 +98,10 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   win <- GLFW.createWindow ww wh title mon Nothing >>= maybe (fail "Failed to create a window") return
   GLFW.makeContextCurrent (Just win)
   prog <- initializeGL
-  GL.lineSmooth $= GL.Enabled
-  GL.blend      $= GL.Enabled
-  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
-  GL.depthMask $= GL.Enabled
-  GL.depthFunc $= Just GL.Lequal
-  GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
-  GL.textureFunction $= GL.Combine
+
   GLFW.swapInterval 1
   -- GL.clearColor $= GL.Color4 1 1 1 1
-  GL.clearColor $= GL.Color4 0.5 0.2 1 1
-
+  
   rbox <- newIORef bbox
 
   GLFW.setFramebufferSizeCallback win $ Just $ \_ w h -> do
@@ -156,11 +139,17 @@ initializeGL = do
     (Text.pack $ unlines
       [ "#version 330"
       , "uniform mat4 projection;"
-      , "uniform mat4 model;"
+      , "uniform mat4 matrices[13];"
+      , "uniform int level;"
       , "out vec2 UV;"
       , "in vec3 in_Position;"
       , "in vec2 in_UV;"
       , "void main(void) {"
+      , "  mat4 model = mat4(1.0);"
+      , "  for(int i=0; i < level; i++)"
+      , "  {"
+      , "    model *= matrices[i];"
+      , "  }"
       , "  gl_Position = projection * model * vec4(in_Position, 1.0);"
       , "  UV = in_UV;"
       , "}"
@@ -172,11 +161,11 @@ initializeGL = do
       , "in vec2 UV;"
       , "out vec4 fragColor;"
       , "uniform sampler2D tex;"
+      , "uniform vec4 color = vec4(1,1,1,1);"
       , "void main(void){"
-      , "  fragColor = texture( tex, UV ).rgba;"
+      , "  fragColor = texture( tex, UV ).rgba * color;"
       , "}"
       ])
-    
 
   GL.compileShader vertexShader
   GL.compileShader fragmentShader
@@ -191,6 +180,16 @@ initializeGL = do
   linked <- GL.get (GL.linkStatus shaderProg)
   unless linked $ do
     GL.get (GL.programInfoLog shaderProg) >>= putStrLn
+  
+  GL.lineSmooth $= GL.Enabled
+  GL.blend      $= GL.Enabled
+  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
+  GL.depthMask $= GL.Enabled
+  GL.depthFunc $= Just GL.Lequal
+  GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
+  GL.textureFunction $= GL.Combine
+  GL.clearColor $= GL.Color4 0.5 0.2 1 1
+
   return shaderProg
 
 endGLFW :: System -> IO ()

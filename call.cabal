@@ -22,7 +22,7 @@ library
     Call.Types
     Call.TH
     Call.System
-    Call.Picture
+    Call.Sight
     Call.Event
     Call.Internal.GLFW
     Call.Internal.PortAudio
@@ -37,7 +37,7 @@ library
     base >=4.5 && <5,
     transformers >=0.3 && <0.5,
     control-bool >=0.2 && <0.4,
-    colors >=0.1 && <0.2,
+    colors >=0.2 && <0.3,
     linear >=1.10 && <1.12,
     boundingboxes >=0.2 && <0.4,
     template-haskell == 2.*,

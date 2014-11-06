@@ -28,19 +28,37 @@
 -- Portability :  non-portable
 --
 -----------------------------------------------------------------------------
-module Call.System (System
+module Call.System (
+  -- * The system
+  System
+  , runSystem
+  , forkSystem
   , ObjS
   , AddrS
-  , runSystem
-  , MonadSystem(..)
-  , forkSystem
+  -- * Wait
+  , stand
+  , wait
+  -- * Raw input
+  , keyPress
+  , mousePosition
+  , mouseButton
+  -- * Component
   , newGraphic
   , newAudio
   , newKeyboard
-  , newMouse) where
+  , newMouse
+  , linkGraphic
+  , linkAudio
+  , linkKeyboard
+  , linkMouse
+  , unlinkGraphic
+  , unlinkAudio
+  , unlinkKeyboard
+  , unlinkMouse) where
 
+import Data.Color
 import Call.Data.Bitmap
-import Call.Picture
+import Call.Sight
 import Call.Types
 import Call.Event
 import Control.Applicative
@@ -61,36 +79,23 @@ import Graphics.Rendering.OpenGL.GL.StateVar
 import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import Unsafe.Coerce
-import Foreign (Ptr, castPtr, nullPtr, sizeOf, with)
-import Foreign.C (CFloat)
+import Foreign (castPtr, sizeOf, with)
 import qualified Data.Vector.Storable as V
-import Data.Distributive (distribute)
+import Data.BoundingBox (Box(..))
 
 type ObjS e s = Object e (System s)
 type AddrS e s = Address e (System s)
 
-class (MonadIO m, MonadObjective m) => MonadSystem m where
-  linkMouse :: Lift Mouse e => Address e m -> m ()
-  linkKeyboard :: Lift Keyboard e => Address e m -> m ()
-  linkGraphic :: Lift Graphic e => Address e m -> m ()
-  linkAudio :: Lift Audio e => Address e m -> m ()
-  unlinkMouse :: Address e m -> m ()
-  unlinkKeyboard :: Address e m -> m ()
-  unlinkGraphic :: Address e m -> m ()
-  unlinkAudio :: Address e m -> m ()
-  stand :: m ()
-  wait :: Time -> m ()
-
-newGraphic :: (MonadSystem m, Lift Graphic e) => Object e (Residence m) -> m (Address e m)
+newGraphic :: (Lift Graphic e) => ObjS e s -> System s (AddrS e s)
 newGraphic o = new o >>= \a -> linkGraphic a >> return a
 
-newAudio :: (MonadSystem m, Lift Audio e) => Object e (Residence m) -> m (Address e m)
+newAudio :: (Lift Audio e) => ObjS e s -> System s (AddrS e s)
 newAudio o = new o >>= \a -> linkAudio a >> return a
 
-newKeyboard :: (MonadSystem m, Lift Keyboard e) => Object e (Residence m) -> m (Address e m)
+newKeyboard :: (Lift Keyboard e) => ObjS e s -> System s (AddrS e s)
 newKeyboard o = new o >>= \a -> linkKeyboard a >> return a
 
-newMouse :: (MonadSystem m, Lift Mouse e) => Object e (Residence m) -> m (Address e m)
+newMouse :: (Lift Mouse e) => ObjS e s -> System s (AddrS e s)
 newMouse o = new o >>= \a -> linkMouse a >> return a
 
 newtype System s a = System (ReaderT (Foundation s) IO a) deriving (Functor, Applicative, Monad)
@@ -132,6 +137,53 @@ runSystem mode box m = do
   G.endGLFW sys
   tryTakeMVar ref
 
+linkMouse :: Lift Mouse e => AddrS e s -> System s ()
+linkMouse (Control i mc) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (Member lift_ mc)
+
+linkKeyboard :: Lift Keyboard e => AddrS e s -> System s ()
+linkKeyboard (Control i mc) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.insert i (Member lift_ mc)
+
+linkGraphic :: Lift Graphic e => AddrS e s -> System s ()
+linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.insert i (Member lift_ mc)
+
+linkAudio :: Lift Audio e => AddrS e s -> System s ()
+linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member lift_ mc)
+
+unlinkMouse :: AddrS e s -> System s ()
+unlinkMouse (Control i _) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
+
+unlinkKeyboard :: AddrS e s -> System s ()
+unlinkKeyboard (Control i _) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.delete i
+
+unlinkGraphic :: AddrS e s -> System s ()
+unlinkGraphic (Control i _) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
+
+unlinkAudio :: AddrS e s -> System s ()
+unlinkAudio (Control i _) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
+
+stand :: System s ()
+stand = mkSystem $ \fo -> takeMVar (theEnd fo)
+
+wait :: Time -> System s ()
+wait dt = mkSystem $ \fo -> do
+  t0 <- takeMVar (theTime fo)
+  Just t <- GLFW.getTime
+  threadDelay $ floor $ (t0 - realToFrac t + dt) * 1000 * 1000
+  putMVar (theTime fo) $ t0 + dt
+
+keyPress :: Key -> System s Bool
+keyPress k = mkSystem $ \fo -> fmap (/=GLFW.KeyState'Released)
+  $ GLFW.getKey (G.theWindow $ theSystem fo) (toEnum . fromEnum $ k)
+
+mousePosition :: System s (V2 Float)
+mousePosition = mkSystem $ \fo -> do
+  (x, y) <- GLFW.getCursorPos (G.theWindow $ theSystem fo)
+  return $ V2 (realToFrac x) (realToFrac y)
+
+mouseButton :: Int -> System s Bool
+mouseButton b = mkSystem $ \fo -> fmap (/=GLFW.MouseButtonState'Released)
+  $ GLFW.getMouseButton (G.theWindow $ theSystem fo) (toEnum b)
+
 data Member e s where
   Member :: (forall x. e x -> f x) -> MVar (Object f (System s)) -> Member e s
 
@@ -163,23 +215,6 @@ instance MonadObjective (System s) where
     putMVar (newObjectId fo) (n + 1)
     return (Control n mc)
 
-instance MonadSystem (System s) where
-  linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.insert i (Member lift_ mc)
-  linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member lift_ mc)
-  linkKeyboard (Control i mc) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.insert i (Member lift_ mc)
-  linkMouse (Control i mc) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (Member lift_ mc)
-  unlinkGraphic (Control i _) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
-  unlinkAudio (Control i _) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
-  unlinkMouse (Control i _) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
-  unlinkKeyboard (Control i _) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.delete i
-
-  wait dt = mkSystem $ \fo -> do
-    t0 <- takeMVar (theTime fo)
-    Just t <- GLFW.getTime
-    threadDelay $ floor $ (t0 - realToFrac t + dt) * 1000 * 1000
-    putMVar (theTime fo) $ t0 + dt
-  stand = mkSystem $ \fo -> takeMVar (theEnd fo)
-
 runGraphic :: Foundation s -> Time -> IO ()
 runGraphic fo t0 = do
   fps <- readIORef (targetFPS fo)
@@ -187,7 +222,7 @@ runGraphic fo t0 = do
   G.beginFrame (theSystem fo)
   ms <- readIORef (coreGraphic fo)
   pics <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request (1/fps) -- is it appropriate?
-  give (TextureStorage (textures fo)) $ mapM_ (drawPicture fo) pics
+  give (TextureStorage (textures fo)) $ mapM_ (drawSight fo) pics
   b <- G.endFrame (theSystem fo)
   
   Just t' <- GLFW.getTime
@@ -240,37 +275,49 @@ scrollCallback fo _ x y = do
 
 newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
 
-drawPicture :: Given TextureStorage => Foundation s -> Picture -> IO ()
-drawPicture fo (Picture p) = p (pure $ return ()) (liftA2 (>>)) draw proj trans eye4 where
-  shaderProg = G.theProgram $ theSystem fo
-  draw Blank mode vs _ = do
-    V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
-      (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-    GL.drawArrays mode 0 $ fromIntegral $ V.length vs
-  draw (Bitmap bmp _ h) mode vs _ = do
-    st <- readIORef (getTextureStorage given)
-    (tex, _, _) <- case IM.lookup h st of
-      Just t -> return t
-      Nothing -> do
-        t <- G.installTexture bmp
-        writeIORef (getTextureStorage given) $ IM.insert h t st
-        return t
-    GL.texture GL.Texture2D $= GL.Enabled
-    GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
-    GL.textureBinding GL.Texture2D $= Just tex
-    
-    V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
-      (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-    GL.drawArrays mode 0 $ fromIntegral $ V.length vs
+drawScene :: Given TextureStorage => Foundation s -> Box V2 Float -> M44 Float -> Scene -> IO ()
+drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj (Scene s) = do
+  GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
+  GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
+  with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 0 $ castPtr ptr
+  s (pure $ return ()) (liftA2 (>>)) prim col trans (RGBA 1 1 1 1, 0)
+  where
+    shaderProg = G.theProgram $ theSystem fo
+    prim Blank mode vs _ = do
+      V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
+        (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
+      GL.drawArrays mode 0 $ fromIntegral $ V.length vs
+    prim (Bitmap bmp _ h) mode vs _ = do
+      st <- readIORef (getTextureStorage given)
+      (tex, _, _) <- case IM.lookup h st of
+        Just t -> return t
+        Nothing -> do
+          t <- G.installTexture bmp
+          writeIORef (getTextureStorage given) $ IM.insert h t st
+          return t
+      GL.texture GL.Texture2D $= GL.Enabled
+      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
+      GL.textureBinding GL.Texture2D $= Just tex
+      
+      V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
+        (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
+      GL.drawArrays mode 0 $ fromIntegral $ V.length vs
 
-    GL.texture GL.Texture2D $= GL.Disabled
-  trans f m mat0 = do
-    GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "model")
-    let mat' = f mat0
-    with (distribute mat') $ \ptr -> GL.glUniformMatrix4fv loc 1 0 (castPtr ptr)
-    m mat'
-    with (distribute mat') $ \ptr -> GL.glUniformMatrix4fv loc 1 0 (castPtr ptr)
-  proj mat m mat0 = do
-    GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
-    with mat $ \ptr -> GL.glUniformMatrix4fv loc 1 0 $ castPtr ptr
-    m mat0
+      GL.texture GL.Texture2D $= GL.Disabled
+    trans f m (color0, n) = do
+      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "matrices"
+      GL.UniformLocation locN <- GL.get $ GL.uniformLocation shaderProg "level" 
+      with f $ \ptr -> GL.glUniformMatrix4fv (loc+n) 1 1 (castPtr ptr)
+      GL.glUniform1i locN (unsafeCoerce $ n + 1)
+      m (color0, n + 1)
+    col f m (color0, n) = do
+      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "color"
+      let c = f color0
+      with c $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)
+      m (c, n)
+      with color0 $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)      
+
+drawSight :: Given TextureStorage => Foundation s -> Sight -> IO ()
+drawSight fo (Sight s) = do
+  b <- readIORef $ G.refRegion $ theSystem fo
+  s b (return ()) (>>) (drawScene fo)
