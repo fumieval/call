@@ -14,9 +14,12 @@ import Data.Function (on)
 import qualified Data.Foldable as F
 import qualified Graphics.Rendering.OpenGL as GL
 import Data.Distributive (distribute)
-stonebrick = unsafePerformIO $ readBitmap "examples/stonebrick.png"
 
-data BlockType = StoneBrick
+bmp_stonebrick = unsafePerformIO $ readBitmap "examples/stonebrick.png"
+bmp_dirt = unsafePerformIO $ readBitmap "examples/dirt.png"
+bmp_crosshair = unsafePerformIO $ readBitmap "examples/crosshair.png"
+
+data BlockType = StoneBrick | Dirt
 
 data Block = Block
   { _blockType :: BlockType }
@@ -28,7 +31,6 @@ data World = World
   , _playerPos' :: Vec Scene
   , _playerVelocity :: Vec Scene
   , _playerAngle :: V2 Float
-  , _playerCursor :: V2 Float
   , _focused :: Maybe (V3 Int, V3 Int)
   , _time :: Float
   }
@@ -63,10 +65,14 @@ block bmp = v0 <> v1 <> v2 where
     ]
   offset (Vertex p uv) = Vertex (p - pure 0.5) uv
 
-theFloor = [(V3 c 0 r, Block StoneBrick) | c <- [-16..16], r <- [-16..16]]
+theFloor = [(V3 c 0 r, Block Dirt) | c <- [-16..16], r <- [-16..16]]
+
+renderBlock :: Block -> Scene
+renderBlock (Block Dirt) = block bmp_dirt
+renderBlock (Block StoneBrick) = block bmp_stonebrick
 
 renderBlocks :: Time -> Map.Map (V3 Int) Block -> Scene
-renderBlocks t m = mconcat [translate (fmap fromIntegral p) $ block stonebrick
+renderBlocks t m = mconcat [translate (fmap fromIntegral p) $ renderBlock b
   | (p, b) <- Map.toList m]
 
 facing :: V3 Int -> V3 Float -> V3 Float -> [(Float, (V3 Int, V3 Int))]
@@ -80,15 +86,19 @@ facing b p dir = [(norm (p - m), (b, fmap floor n))
   where
     b' = fmap fromIntegral b
 
+applyPlay t v
+  | norm v < t = zero
+  | otherwise = v
+
 updatePlayer dt = do
+  (p:_) <- lift getGamepads
+  (mx : mz : px : py : _) <- lift $ gamepadAxes p
+  playerAngle += applyPlay 0.005 (V2 px py ^/ 8)
 
   pos <- use playerPos
   V2 dir elev <- use playerAngle
   let V2 lx lz = distribute $ V3 (angle dir) 0 (-perp (angle dir))
-  whenM (lift $ keyPress KeyW) $ playerPos' += lz ^* (4 * dt)
-  whenM (lift $ keyPress KeyS) $ playerPos' -= lz ^* (3 * dt)
-  whenM (lift $ keyPress KeyA) $ playerPos' -= lx ^* (3 * dt)
-  whenM (lift $ keyPress KeyD) $ playerPos' += lx ^* (3 * dt)
+  playerPos' += applyPlay 0.005 ((lz ^* mz + lx ^* mx) ^/ 8)
   
   vel <- use playerVelocity
   playerPos' += vel
@@ -98,12 +108,12 @@ updatePlayer dt = do
 
   pos' <- use playerPos'
   when (fmap round (pos' - V3 0 1 0) `Map.member` bs) $ do
-    playerPos' .= pos
+    playerPos . _y .= view _y pos
     playerVelocity . _y .= 0
 
   playerPos <~ use playerPos'
 
-  let aim = V3 (sin dir * cos elev) (-sin elev) (-cos dir * cos elev)
+  let aim = spherical dir elev
   case sortBy (compare `on` fst) [v | i <- Map.keys bs
     , fmap fromIntegral i `qd` pos < 8*8
     , v@(_, (p, n)) <- facing i pos aim
@@ -111,32 +121,26 @@ updatePlayer dt = do
     ((_, v):_) -> focused ?= v
     [] -> focused .= Nothing
 
-main = runSystem Windowed (Box (V2 0 0) (V2 640 480)) $ do
-  cursor0 <- mousePosition
-  disableCursor
+spherical dir elev = V3 (sin dir * cos elev) (-sin elev) (-cos dir * cos elev)
+
+main = runSystem FullScreen (Box (V2 0 0) (V2 1600 900)) $ do
   world <- new $ variable $ World
     (Map.fromList theFloor)
     (V3 0 2 0)
     (V3 0 2 0)
     (V3 0 0 0)
     (V2 0 0)
-    cursor0
     Nothing
     0
-  newMouse $ liftO $ accept $ ((world .&) .) $ \case
-    Button (Down 0) -> use focused >>= \case
+  newJoypad $ liftO $ accept $ ((world .&) .) $ \case
+    PadButton _ (Down 7) -> use focused >>= \case
       Just (p, _) -> blocks . at p .= Nothing
       Nothing -> return ()
-    Button (Down 1) -> use focused >>= \case
+    PadButton _ (Down 5) -> use focused >>= \case
       Just (p, n) -> blocks . at (p + n) ?= Block StoneBrick
       Nothing -> return ()
-    Cursor pos -> do
-      pos0 <- use playerCursor
-      playerCursor .= pos
-      playerAngle += (pos - pos0) ^/ 60
-    _ -> return ()
-  newKeyboard $ liftO $ accept $ \case
-    Down KeySpace -> world .& playerVelocity += V3 0 0.5 0
+    PadButton _ (Down 6) -> playerVelocity += V3 0 0.5 0
+    PadButton _ (Down i) -> liftIO $ print i
     _ -> return ()
 
   newGraphic $ liftO $ accept $ \dt -> world .& do
@@ -151,11 +155,15 @@ main = runSystem Windowed (Box (V2 0 0) (V2 640 480)) $ do
       Nothing -> mempty
     liftIO $ GL.lineWidth GL.$= 16
     pos <- use playerPos
+
     V2 dir elev <- use playerAngle
     bs <- use blocks
-    return $ viewScene (pi / 4) 1 1000
-      $ rotateOn (V3 elev 0 0) $ rotateOn (V3 0 dir 0) $ translate (-pos) $ mconcat
-        [renderBlocks t bs
-        , mark
-        ]
+    return $ mconcat
+      [viewScene (pi / 4) 1 1000
+        $ rotateOn (V3 elev 0 0) $ rotateOn (V3 0 dir 0) $ translate (-pos) $ mconcat
+          [renderBlocks t bs
+          , mark
+          , translate (V3 0 2 0) $ toward (normalize $ V3 0 2 0 - pos) $ scale (1/48) $ bitmap bmp_crosshair
+          ]
+      ]
   stand

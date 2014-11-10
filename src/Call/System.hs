@@ -45,21 +45,29 @@ module Call.System (
   , enableCursor
   , hideCursor
   , disableCursor
+  , getGamepads
+  , gamepadButtons
+  , gamepadAxes
   -- * Component
   , newGraphic
   , newAudio
   , newKeyboard
   , newMouse
+  , newJoypad
   , linkGraphic
   , linkAudio
   , linkKeyboard
   , linkMouse
+  , linkJoypad
   , unlinkGraphic
   , unlinkAudio
   , unlinkKeyboard
-  , unlinkMouse) where
+  , unlinkMouse
+  , unlinkJoypad) where
 
+import Data.Maybe
 import Data.Color
+import Control.Lens
 import Call.Data.Bitmap
 import Call.Sight
 import Call.Types
@@ -85,7 +93,6 @@ import Unsafe.Coerce
 import Foreign (castPtr, sizeOf, with)
 import qualified Data.Vector.Storable as V
 import Data.BoundingBox (Box(..))
-import Paths_call
 
 type ObjS e s = Object e (System s)
 type AddrS e s = Address e (System s)
@@ -102,6 +109,9 @@ newKeyboard o = new o >>= \a -> linkKeyboard a >> return a
 newMouse :: (Lift Mouse e) => ObjS e s -> System s (AddrS e s)
 newMouse o = new o >>= \a -> linkMouse a >> return a
 
+newJoypad :: (Lift Joypad e) => ObjS e s -> System s (AddrS e s)
+newJoypad o = new o >>= \a -> linkJoypad a >> return a
+
 newtype System s a = System (ReaderT (Foundation s) IO a) deriving (Functor, Applicative, Monad)
 
 unSystem :: Foundation s -> System s a -> IO a
@@ -113,6 +123,22 @@ mkSystem = unsafeCoerce
 forkSystem :: System s () -> System s ThreadId
 forkSystem m = mkSystem $ \fo -> forkIO (unSystem fo m)
 
+data Foundation s = Foundation
+  { newObjectId :: MVar Int
+  , sampleRate :: Float
+  , coreGraphic :: IORef (IM.IntMap (Member Graphic s))
+  , coreAudio :: IORef (IM.IntMap (Member Audio s))
+  , coreKeyboard :: IORef (IM.IntMap (Member Keyboard s))
+  , coreMouse :: IORef (IM.IntMap (Member Mouse s))
+  , coreJoypad :: IORef (IM.IntMap (Member Joypad s))
+  , theTime :: MVar Time
+  , theSystem :: G.System
+  , targetFPS :: IORef Float
+  , textures :: IORef (IM.IntMap G.Texture)
+  , theEnd :: MVar ()
+  , theGamepadButtons :: IORef (IM.IntMap (String, IM.IntMap Bool))
+  }
+
 runSystem :: WindowMode -> BoundingBox2 -> (forall s. System s a) -> IO (Maybe a)
 runSystem mode box m = do
   sys <- G.beginGLFW mode box
@@ -123,11 +149,13 @@ runSystem mode box m = do
     <*> newIORef IM.empty
     <*> newIORef IM.empty
     <*> newIORef IM.empty
+    <*> newIORef IM.empty
     <*> newMVar 0
     <*> pure sys
     <*> newIORef 60
     <*> newIORef IM.empty
     <*> newEmptyMVar
+    <*> newIORef IM.empty
   let win = G.theWindow sys
   GLFW.setKeyCallback win $ Just $ keyCallback f
   GLFW.setMouseButtonCallback win $ Just $ mouseButtonCallback f
@@ -156,6 +184,9 @@ linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM
 linkAudio :: Lift Audio e => AddrS e s -> System s ()
 linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member lift_ mc)
 
+linkJoypad :: Lift Joypad e => AddrS e s -> System s ()
+linkJoypad (Control i mc) = mkSystem $ \fo -> modifyIORef (coreJoypad fo) $ IM.insert i (Member lift_ mc)
+
 unlinkMouse :: AddrS e s -> System s ()
 unlinkMouse (Control i _) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
 
@@ -167,6 +198,10 @@ unlinkGraphic (Control i _) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ I
 
 unlinkAudio :: AddrS e s -> System s ()
 unlinkAudio (Control i _) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
+
+unlinkJoypad :: AddrS e s -> System s ()
+unlinkJoypad (Control i _) = mkSystem $ \fo -> modifyIORef (coreJoypad fo) $ IM.delete i
+
 
 stand :: System s ()
 stand = mkSystem $ \fo -> takeMVar (theEnd fo)
@@ -200,22 +235,19 @@ mouseButton :: Int -> System s Bool
 mouseButton b = mkSystem $ \fo -> fmap (/=GLFW.MouseButtonState'Released)
   $ GLFW.getMouseButton (G.theWindow $ theSystem fo) (toEnum b)
 
+getGamepads :: System s [Gamepad]
+getGamepads = mkSystem $ const $ fmap catMaybes $ forM [(GLFW.Joystick'1)..]
+  $ \j -> fmap (Gamepad (fromEnum j)) <$> GLFW.getJoystickName j
+
+gamepadAxes :: Gamepad -> System s [Float]
+gamepadAxes (Gamepad i _) = mkSystem $ const $ maybe [] (map realToFrac) <$> GLFW.getJoystickAxes (toEnum i)
+
+gamepadButtons :: Gamepad -> System s [Bool]
+gamepadButtons (Gamepad i _) = mkSystem $ const
+  $ maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
+
 data Member e s where
   Member :: (forall x. e x -> f x) -> MVar (Object f (System s)) -> Member e s
-
-data Foundation s = Foundation
-  { newObjectId :: MVar Int
-  , sampleRate :: Float
-  , coreGraphic :: IORef (IM.IntMap (Member Graphic s))
-  , coreAudio :: IORef (IM.IntMap (Member Audio s))
-  , coreKeyboard :: IORef (IM.IntMap (Member Keyboard s))
-  , coreMouse :: IORef (IM.IntMap (Member Mouse s))
-  , theTime :: MVar Time
-  , theSystem :: G.System
-  , targetFPS :: IORef Float
-  , textures :: IORef (IM.IntMap G.Texture)
-  , theEnd :: MVar ()
-  }
 
 instance MonadIO (System s) where
     liftIO m = mkSystem $ const m
@@ -231,8 +263,38 @@ instance MonadObjective (System s) where
     putMVar (newObjectId fo) (n + 1)
     return (Control n mc)
 
+announce :: Foundation s -> IM.IntMap (Member (Request a ()) s) -> a -> IO ()
+announce fo ms r = forM_ (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request r
+
+pollGamepad :: Foundation s -> IO ()
+pollGamepad fo = do
+  ms <- readIORef (coreJoypad fo)
+  ps <- IM.fromList <$> map (\p@(Gamepad i _) -> (i, p)) <$> unSystem fo getGamepads
+  bs0 <- readIORef (theGamepadButtons fo)
+
+  bs0' <- forM (IM.toList $ ps IM.\\ bs0) $ \(i, p@(Gamepad _ s)) -> do
+    announce fo ms $ PadConnection (Up p)
+    return (i, (s, IM.empty))
+
+  bs0_ <- forM (IM.toList $ bs0 IM.\\ ps) $ \(i, (s, _)) -> do
+    announce fo ms $ PadConnection (Down $ Gamepad i s)
+    return (i, ())
+
+  let bs1 = bs0 `IM.union` IM.fromList bs0' IM.\\ IM.fromList bs0_
+
+  ls <- forM (IM.toList ps) $ \(j, p@(Gamepad _ s)) -> do
+    bs <- zip [0..] <$> unSystem fo (gamepadButtons p)
+    forM_ bs $ \(i, v) -> case (v, maybe False id (bs1 ^? ix j . _2 . ix i)) of
+        (False, True) -> announce fo ms $ PadButton p (Up i)
+        (True, False) -> announce fo ms $ PadButton p (Down i)
+        _ -> return ()
+    return (j, (s, IM.fromList bs))
+
+  writeIORef (theGamepadButtons fo) $ foldr (uncurry IM.insert) bs1 ls
+
 runGraphic :: Foundation s -> Time -> IO ()
 runGraphic fo t0 = do
+  pollGamepad fo
   fps <- readIORef (targetFPS fo)
   let t1 = t0 + 1/fps
   G.beginFrame (theSystem fo)
@@ -291,9 +353,11 @@ scrollCallback fo _ x y = do
 
 newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
 
-drawScene :: Given TextureStorage => Foundation s -> Box V2 Float -> M44 Float -> Scene -> IO ()
-drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj (Scene s) = do
+drawScene :: Given TextureStorage => Foundation s -> Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
+drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
   GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
+
+  GL.currentProgram $= Just shaderProg
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
   with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 0 $ castPtr ptr
   GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "useTexture"

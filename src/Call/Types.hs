@@ -16,6 +16,8 @@ module Call.Types (
     , WindowMode(..)
     , BoundingBox2
     , MouseEvent(..)
+    , Gamepad(..)
+    , GamepadEvent(..)
     , Chatter(..)
     , Key(..)
     , charToKey
@@ -42,6 +44,10 @@ type BoundingBox2 = Box V2 Float
 data Chatter a = Up a | Down a
 
 data MouseEvent = Button (Chatter Int) | Cursor Vec2 | Scroll Vec2
+
+data Gamepad = Gamepad Int String
+
+data GamepadEvent = PadButton Gamepad (Chatter Int) | PadConnection (Chatter Gamepad)
 
 data Key =
       KeyUnknown

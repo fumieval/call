@@ -19,17 +19,17 @@
 --
 -----------------------------------------------------------------------------
 module Call.Sight (Affine(..)
-  , Figure(..)
-  , Picture(..)
-  , bitmap
-  , Scene(..)
-  , transformScene
-  , vertices
-  , toward
-  , Sight(..)
-  , viewPicture
-  , viewScene
-  , GL.PrimitiveMode(..)) where
+    , Figure(..)
+    , Picture(..)
+    , bitmap
+    , Scene(..)
+    , transformScene
+    , vertices
+    , toward
+    , Sight(..)
+    , viewPicture
+    , viewScene
+    , GL.PrimitiveMode(..)) where
 import qualified Call.Data.Bitmap as B
 import qualified Data.BoundingBox as X
 import Data.Monoid
@@ -55,9 +55,9 @@ class Affine a => Figure a where
   outline :: a -> a
 
 toward :: V3 Float -> Picture -> Scene
-toward (V3 x y z) (Picture s) = transformScene
-  ((!!*z) $ m33_to_m44 $ fromQuaternion
-    $ axisAngle (V3 (-y) x 0) (sqrt (x*x+y*y) * pi / 2))
+toward n@(V3 x y z) (Picture s) = transformScene
+  ((!!*norm n) $ m33_to_m44 $ fromQuaternion
+    $ axisAngle (V3 (-y) x 0) (-sqrt (x*x+y*y) * pi / 2))
   s
 
 bitmap :: B.Bitmap -> Picture
@@ -65,7 +65,7 @@ bitmap bmp = Picture $ Scene
   $ \_ _ f _ _ -> f bmp GL.TriangleStrip
     (V.fromList [V3 (-w/2) (-h/2) 0 `Vertex` V2 0 0
         , V3 (w/2) (-h/2) 0 `Vertex` V2 1 0
-        , V3 (w/2) (-h/2) 0 `Vertex` V2 0 1
+        , V3 (-w/2) (h/2) 0 `Vertex` V2 0 1
         , V3 (w/2) (h/2) 0 `Vertex` V2 1 1]) where
   V2 w h = fmap fromIntegral $ B.size bmp
 
@@ -121,12 +121,16 @@ newtype Sight = Sight { unSight
   X.Box V2 Float
   -> r
   -> (r -> r -> r)
-  -> (X.Box V2 Float -> M44 Float -> Scene -> r)
+  -> (X.Box V2 Float -> M44 Float -> Bool -> Scene -> r)
   -> r
   }
 
+instance Monoid Sight where
+  mempty = Sight $ \_ e _ _ -> e
+  mappend (Sight x) (Sight y) = Sight $ \b e a f -> a (x b e a f) (y b e a f)
+
 viewPicture :: Picture -> Sight
-viewPicture (Picture s) = Sight $ \box@(X.Box (V2 x0 y0) (V2 x1 y1)) _ _ f -> f box (ortho x0 x1 y0 y1 0 (-100)) s
+viewPicture (Picture s) = Sight $ \box@(X.Box (V2 x0 y0) (V2 x1 y1)) _ _ f -> f box (ortho x0 x1 y1 y0 0 (-100)) False s
 
 viewScene :: Float -> Float -> Float -> Scene -> Sight
-viewScene fov near far s = Sight $ \box _ _ f -> f box (perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far) s
+viewScene fov near far s = Sight $ \box _ _ f -> f box (perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far) True s

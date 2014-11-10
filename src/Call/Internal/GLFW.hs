@@ -143,17 +143,24 @@ initializeGL = do
   GL.attribLocation shaderProg "in_UV" $= uvAttribute
   GL.linkProgram shaderProg
   GL.currentProgram $= Just shaderProg
-
+  
+  -- GL.blend $= GL.Disabled
+  GL.depthMask $= GL.Enabled
+  GL.depthFunc $= Just GL.Lequal
+  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
+  {-
+  GL.depthMask $= GL.Disabled
+  GL.depthFunc $= Nothing
+  
+  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
+  -}
+  GL.blend      $= GL.Enabled
+  GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
   linked <- GL.get (GL.linkStatus shaderProg)
   unless linked $ do
     GL.get (GL.programInfoLog shaderProg) >>= putStrLn
   
   GL.lineSmooth $= GL.Enabled
-  GL.blend      $= GL.Enabled
-  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
-  GL.depthMask $= GL.Enabled
-  GL.depthFunc $= Just GL.Lequal
-  GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
   GL.textureFunction $= GL.Combine
   GL.clearColor $= GL.Color4 0.5 0.2 1 1
 
