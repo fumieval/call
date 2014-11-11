@@ -161,7 +161,7 @@ spherical dir elev = V3 (sin dir * cos elev) (-sin elev) (-cos dir * cos elev)
 toward' :: V3 Float -> Picture -> Scene
 toward' n@(V3 x y z) (Picture s) = transformScene
   ((!!*norm n) $ m33_to_m44 $ fromQuaternion
-    $ axisAngle (V3 (-y) x 0) (-asin (sqrt (x*x+y*y))))
+    $ axisAngle (V3 (-y) x 0) $ acos $ z / norm n)
   s
 
 main = runSystem Windowed (Box (V2 0 0) (V2 1600 900)) $ do
