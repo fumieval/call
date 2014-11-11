@@ -35,9 +35,10 @@ module Call.System (
   , forkSystem
   , ObjS
   , AddrS
-  -- * Wait
+  -- * Time
   , stand
   , wait
+  , setFPS
   -- * Raw input
   , keyPress
   , mousePosition
@@ -75,7 +76,6 @@ import Call.Event
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
-import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Object
 import Control.Monad.Objective
@@ -111,6 +111,9 @@ newMouse o = new o >>= \a -> linkMouse a >> return a
 
 newJoypad :: (Lift Joypad e) => ObjS e s -> System s (AddrS e s)
 newJoypad o = new o >>= \a -> linkJoypad a >> return a
+
+setFPS :: Float -> System s ()
+setFPS f = mkSystem $ \fo -> writeIORef (targetFPS fo) f
 
 newtype System s a = System (ReaderT (Foundation s) IO a) deriving (Functor, Applicative, Monad)
 
@@ -164,6 +167,19 @@ runSystem mode box m = do
   GL.UniformLocation loc <- GL.get $ GL.uniformLocation (G.theProgram sys) "color"
   with (V4 1 1 1 1 :: V4 Float) $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
 
+  print =<< GLFW.getWindowClientAPI win
+  putStr "OpenGL Version: "
+  cv0 <- GLFW.getWindowContextVersionMajor    win
+  cv1 <- GLFW.getWindowContextVersionMinor    win
+  cv2 <- GLFW.getWindowContextVersionRevision win
+  putStrLn $ show cv0 ++ "." ++ show cv1 ++ "." ++ show cv2 
+  print =<< GLFW.getWindowContextRobustness win
+  putStr "Forward compat: "
+  print =<< GLFW.getWindowOpenGLForwardCompat win
+  putStr "Debug context: "
+  print =<< GLFW.getWindowOpenGLDebugContext win
+  print =<< GLFW.getWindowOpenGLProfile win
+  
   ref <- newEmptyMVar
   _ <- flip forkFinally (either throwIO (putMVar ref)) $ unSystem f m
   PA.with 44100 512 (audioProcess f) $ liftIO $ do
@@ -201,7 +217,6 @@ unlinkAudio (Control i _) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.de
 
 unlinkJoypad :: AddrS e s -> System s ()
 unlinkJoypad (Control i _) = mkSystem $ \fo -> modifyIORef (coreJoypad fo) $ IM.delete i
-
 
 stand :: System s ()
 stand = mkSystem $ \fo -> takeMVar (theEnd fo)
@@ -359,7 +374,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
 
   GL.currentProgram $= Just shaderProg
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
-  with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 0 $ castPtr ptr
+  with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 1 $ castPtr ptr
   GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "useTexture"
   s (pure $ return ()) (liftA2 (>>)) (prim locT) col trans (RGBA 1 1 1 1, 0)
   where
@@ -380,7 +395,6 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
           return t
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
-      
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs
