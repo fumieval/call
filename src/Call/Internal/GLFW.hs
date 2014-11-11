@@ -88,6 +88,8 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
     FullScreen -> GLFW.getPrimaryMonitor
     _ -> return Nothing
 
+  -- GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
+  -- GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
   GLFW.windowHint $ GLFW.WindowHint'Resizable $ mode == Resizable
   win <- GLFW.createWindow ww wh title mon Nothing >>= maybe (fail "Failed to create a window") return
   GLFW.makeContextCurrent (Just win)
@@ -154,6 +156,7 @@ initializeGL = do
   
   GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
   -}
+  -- GL.cullFace $= GL.Back
   GL.blend      $= GL.Enabled
   GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
   linked <- GL.get (GL.linkStatus shaderProg)

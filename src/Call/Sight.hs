@@ -130,7 +130,7 @@ instance Monoid Sight where
   mappend (Sight x) (Sight y) = Sight $ \b e a f -> a (x b e a f) (y b e a f)
 
 viewPicture :: Picture -> Sight
-viewPicture (Picture s) = Sight $ \box@(X.Box (V2 x0 y0) (V2 x1 y1)) _ _ f -> f box (ortho x0 x1 y1 y0 0 (-100)) False s
+viewPicture (Picture s) = Sight $ \box@(X.Box (V2 x0 y0) (V2 x1 y1)) _ _ f -> f box (ortho x0 x1 y1 y0 (-1) 1) False s
 
 viewScene :: Float -> Float -> Float -> Scene -> Sight
 viewScene fov near far s = Sight $ \box _ _ f -> f box (perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far) True s

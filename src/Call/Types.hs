@@ -23,6 +23,7 @@ module Call.Types (
     , charToKey
     , BlendMode(..)
     , Vertex(..)
+    , Bitmap(..)
     ) where
 
 import Control.Applicative
@@ -32,6 +33,7 @@ import Data.BoundingBox
 import Data.Char
 import Foreign.Storable
 import Foreign.Ptr
+import Call.Data.Bitmap
 
 type Time = Float
 

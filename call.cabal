@@ -42,7 +42,7 @@ library
     transformers >=0.3 && <0.5,
     control-bool >=0.2 && <0.4,
     colors >=0.2 && <0.3,
-    linear >=1.10 && <1.12,
+    linear >=1.13 && <2,
     boundingboxes >=0.2 && <0.4,
     template-haskell == 2.*,
     directory,
