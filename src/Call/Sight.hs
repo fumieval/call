@@ -25,7 +25,6 @@ module Call.Sight (Affine(..)
     , Scene(..)
     , transformScene
     , vertices
-    , toward
     , Sight(..)
     , viewPicture
     , viewScene
@@ -51,14 +50,9 @@ class Affine a => Figure a where
   color :: RGBA -> a -> a
   line :: [Vec a] -> a
   polygon :: [Vec a] -> a
+  polygonOutline :: [Vec a] -> a
   circle :: Normal a -> a
-  outline :: a -> a
-
-toward :: V3 Float -> Picture -> Scene
-toward n@(V3 x y z) (Picture s) = transformScene
-  ((!!*norm n) $ m33_to_m44 $ fromQuaternion
-    $ axisAngle (V3 (-y) x 0) (-sqrt (x*x+y*y) * pi / 2))
-  s
+  circleOutline :: Normal a -> a
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
@@ -91,10 +85,20 @@ instance Affine Scene where
 
 instance Figure Scene where
   color col (Scene s) = Scene $ \e a f c t -> c (multRGBA col) (s e a f c t)
+  line = primitive GL.LineStrip
+  polygon = primitive GL.Polygon
+  polygonOutline = primitive GL.LineLoop
+{-
+  circle = unit_circle
 
+unit_circle n = map angle [0..2*pi/n]
+-}
 instance Monoid Scene where
   mempty = Scene $ \e _ _ _ _ -> e
   mappend (Scene x) (Scene y) = Scene $ \e a f p t -> a (x e a f p t) (y e a f p t)
+
+primitive :: GL.PrimitiveMode -> [Vec Scene] -> Scene
+primitive m v = Scene $ \_ _ f _ _ -> f Blank m (V.fromList $ map (`Vertex` V2 0 0) v)
 
 vertices :: B.Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> Scene
 vertices b m v = Scene $ \_ _ f _ _ -> f b m v
@@ -124,6 +128,7 @@ newtype Sight = Sight { unSight
   -> (X.Box V2 Float -> M44 Float -> Bool -> Scene -> r)
   -> r
   }
+
 
 instance Monoid Sight where
   mempty = Sight $ \_ e _ _ -> e

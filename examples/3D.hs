@@ -1,6 +1,5 @@
 {-# LANGUAGE TemplateHaskell, LambdaCase, Rank2Types #-}
 import Call
-import Call.Data.Bitmap (Bitmap(..))
 import Control.Lens
 import qualified Data.Vector.Storable as V
 import System.IO.Unsafe
@@ -11,7 +10,6 @@ import Data.BoundingBox (Box(..))
 import Data.List (sortBy)
 import Data.Function (on)
 import qualified Data.Foldable as F
-import qualified Graphics.Rendering.OpenGL as GL
 import qualified Data.Set as Set
 import Data.Distributive (distribute)
 
@@ -20,6 +18,7 @@ bmp_stonebrick = unsafePerformIO $ readBitmap "examples/stonebrick.png"
 bmp_dirt = unsafePerformIO $ readBitmap "examples/dirt.png"
 bmp_crosshair = unsafePerformIO $ readBitmap "examples/crosshair.png"
 bmp_skybox = unsafePerformIO $ readBitmap "examples/skybox.png"
+bmp_logo = unsafePerformIO $ readBitmap "examples/logo.png"
 
 data Surface = STop | SBottom | SLeft | SRight | SFront | SRear deriving (Show, Eq, Ord)
 
@@ -159,6 +158,12 @@ updatePlayer dt = do
 spherical :: RealFloat a => a -> a -> V3 a
 spherical dir elev = V3 (sin dir * cos elev) (-sin elev) (-cos dir * cos elev)
 
+toward' :: V3 Float -> Picture -> Scene
+toward' n@(V3 x y z) (Picture s) = transformScene
+  ((!!*norm n) $ m33_to_m44 $ fromQuaternion
+    $ axisAngle (V3 (-y) x 0) (-asin (sqrt (x*x+y*y))))
+  s
+
 main = runSystem Windowed (Box (V2 0 0) (V2 1600 900)) $ do
   setFPS 30
   world <- new $ variable $ World
@@ -188,15 +193,15 @@ main = runSystem Windowed (Box (V2 0 0) (V2 1600 900)) $ do
       Just (p, n) -> let q = fmap fromIntegral p in
         vertices Blank LineStrip $ V.fromList [q `Vertex` 0, (q + fmap fromIntegral n ^* 2) `Vertex` 0]
       Nothing -> mempty
-    liftIO $ GL.lineWidth GL.$= 4
     pos <- use playerPos
 
     V2 dir elev <- use playerAngle
     bs <- use blocks
-    return $ mconcat [viewScene (pi / 4) 1 1000
+    return $ mconcat [viewScene (pi / 4) 1 200
       $ rotateOn (V3 elev 0 0) $ rotateOn (V3 0 dir 0) $ translate (-pos) $ mconcat
         [ translate pos skybox
         , renderBlocks t bs
         , mark
+        , translate (V3 0 2 0) $ toward' (normalize $ V3 0 2 0 - pos) $ scale (1/32) $ bitmap bmp_logo
         ], viewPicture $ translate (V2 800 450) $ bitmap bmp_crosshair]
   stand
