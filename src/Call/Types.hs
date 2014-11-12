@@ -23,6 +23,8 @@ module Call.Types (
     , charToKey
     , BlendMode(..)
     , Vertex(..)
+    , positionUV
+    , positionOnly
     , Bitmap(..)
     ) where
 
@@ -204,12 +206,26 @@ data BlendMode = Normal
     deriving (Enum, Eq, Ord, Read, Show, Typeable)
 
 data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 Float)
-  , vUV :: {-# UNPACK #-} !(V2 Float) }
+  , vUV :: {-# UNPACK #-} !(V2 Float)
+  , vNormal :: {-# UNPACK #-} !(V3 Float) }
+
+align1 = sizeOf (vPos undefined)
+align2 = align1 + sizeOf (vUV undefined)
 
 instance Storable Vertex where
-  sizeOf _ = sizeOf (undefined :: V3 Float) + sizeOf (undefined :: V2 Float)
+  sizeOf _ = sizeOf (undefined :: V3 Float) + sizeOf (undefined :: V2 Float) + sizeOf (undefined :: V3 Float)
   alignment _ = 0
-  peek ptr = Vertex <$> peek (castPtr ptr) <*> peek (castPtr $ ptr `plusPtr` sizeOf (vPos undefined))
-  poke ptr (Vertex v t) = do
-      poke (castPtr ptr) v
-      poke (castPtr ptr `plusPtr` sizeOf (0 :: V3 Float)) t
+  peek ptr = Vertex
+    <$> peek (castPtr ptr)
+    <*> peek (castPtr $ ptr `plusPtr` align1)
+    <*> peek (castPtr $ ptr `plusPtr` align2)
+  poke ptr (Vertex v t n) = do
+    poke (castPtr ptr) v
+    poke (castPtr ptr `plusPtr` align1) t
+    poke (castPtr ptr `plusPtr` align2) n
+
+positionUV :: V3 Float -> V2 Float -> Vertex
+positionUV v p = Vertex v p zero
+
+positionOnly :: V3 Float -> Vertex
+positionOnly v = Vertex v zero zero

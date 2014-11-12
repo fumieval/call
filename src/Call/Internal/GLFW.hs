@@ -116,6 +116,8 @@ initializeGL :: IO GL.Program
 initializeGL = do
   let vertexAttribute = GL.AttribLocation 0
   let uvAttribute = GL.AttribLocation 1
+  let normalAttribute = GL.AttribLocation 2
+  
   cubeVao <- GL.genObjectName
   cubeVbo <- GL.genObjectName
 
@@ -135,6 +137,12 @@ initializeGL = do
     ,GL.VertexArrayDescriptor 2 GL.Float stride (nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)))
   GL.vertexAttribArray uvAttribute $= GL.Enabled
 
+  GL.vertexAttribPointer normalAttribute $=
+    (GL.ToFloat
+    ,GL.VertexArrayDescriptor 3 GL.Float stride
+      (nullPtr `plusPtr` sizeOf (0 :: V3 CFloat) `plusPtr` sizeOf (0 :: V2 CFloat)))
+  GL.vertexAttribArray normalAttribute $= GL.Enabled
+
   vertexShader <- GL.createShader GL.VertexShader
   fragmentShader <- GL.createShader GL.FragmentShader
   compileShader "shaders/vertex.glsl" vertexShader
@@ -144,6 +152,7 @@ initializeGL = do
   GL.attachShader shaderProg fragmentShader
   GL.attribLocation shaderProg "in_Position" $= vertexAttribute
   GL.attribLocation shaderProg "in_UV" $= uvAttribute
+  GL.attribLocation shaderProg "in_Normal" $= normalAttribute
   GL.linkProgram shaderProg
   GL.currentProgram $= Just shaderProg
   
@@ -167,6 +176,8 @@ initializeGL = do
   GL.lineSmooth $= GL.Enabled
   GL.textureFunction $= GL.Combine
   GL.clearColor $= GL.Color4 0.5 0.2 1 1
+  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
+  GL.glUniform1i loc 0
 
   return shaderProg
 

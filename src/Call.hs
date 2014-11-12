@@ -12,6 +12,7 @@ module Call ( -- * System
     module Control.Monad,
     module Control.Applicative,
     module Control.Bool,
+    module Data.Monoid,
     module Data.Color,
     module Data.Color.Names,
     module Linear,
@@ -35,6 +36,7 @@ import Control.Object
 import Control.Monad.Objective.Class
 import Data.Color
 import Data.Color.Names
+import Data.Monoid
 import Linear
 import Data.BoundingBox
 

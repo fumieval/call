@@ -28,6 +28,8 @@ module Call.Sight (Affine(..)
     , Sight(..)
     , viewPicture
     , viewScene
+    , sphericalMap
+    , MappingMode(..)
     , GL.PrimitiveMode(..)) where
 import qualified Call.Data.Bitmap as B
 import qualified Data.BoundingBox as X
@@ -56,21 +58,29 @@ class Affine a => Figure a where
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
-  $ \_ _ f _ _ -> f bmp GL.TriangleStrip
-    (V.fromList [V3 (-w/2) (-h/2) 0 `Vertex` V2 0 0
-        , V3 (w/2) (-h/2) 0 `Vertex` V2 1 0
-        , V3 (-w/2) (h/2) 0 `Vertex` V2 0 1
-        , V3 (w/2) (h/2) 0 `Vertex` V2 1 1]) where
+  $ \_ _ f _ _ _ -> f bmp GL.TriangleStrip
+    (V.fromList [V3 (-w/2) (-h/2) 0 `positionUV` V2 0 0
+        , V3 (w/2) (-h/2) 0 `positionUV` V2 1 0
+        , V3 (-w/2) (h/2) 0 `positionUV` V2 0 1
+        , V3 (w/2) (h/2) 0 `positionUV` V2 1 1]) where
   V2 w h = fmap fromIntegral $ B.size bmp
+
+toward :: V3 Float -> Picture -> Scene
+toward n@(V3 x y z) (Picture s) = transformScene
+  (m33_to_m44 $ fromQuaternion $ axisAngle (V3 (-y) x 0) $ acos $ z / norm n)
+  s
 
 newtype Scene = Scene { unScene :: forall r.
   r
   -> (r -> r -> r)
   -> (B.Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> r)
   -> ((RGBA -> RGBA) -> r -> r)
+  -> (Bitmap -> MappingMode -> r -> r)
   -> (M44 Float -> r -> r)
   -> r
   }
+
+data MappingMode = MappingAdd | MappingMultiply
 
 instance Affine Scene where
   type Vec Scene = V3 Float
@@ -84,7 +94,7 @@ instance Affine Scene where
   translate v = transformScene $ translation .~ v $ eye4
 
 instance Figure Scene where
-  color col (Scene s) = Scene $ \e a f c t -> c (multRGBA col) (s e a f c t)
+  color col (Scene s) = Scene $ \e a f c b t -> c (multRGBA col) (s e a f c b t)
   line = primitive GL.LineStrip
   polygon = primitive GL.Polygon
   polygonOutline = primitive GL.LineLoop
@@ -94,17 +104,20 @@ instance Figure Scene where
 unit_circle n = map angle [0..2*pi/n]
 -}
 instance Monoid Scene where
-  mempty = Scene $ \e _ _ _ _ -> e
-  mappend (Scene x) (Scene y) = Scene $ \e a f p t -> a (x e a f p t) (y e a f p t)
+  mempty = Scene $ \e _ _ _ _ _ -> e
+  mappend (Scene x) (Scene y) = Scene $ \e a f c b t -> a (x e a f c b t) (y e a f c b t)
 
 primitive :: GL.PrimitiveMode -> [Vec Scene] -> Scene
-primitive m v = Scene $ \_ _ f _ _ -> f Blank m (V.fromList $ map (`Vertex` V2 0 0) v)
+primitive m v = Scene $ \_ _ f _ _ _ -> f Blank m (V.fromList $ map positionOnly v)
 
 vertices :: B.Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> Scene
-vertices b m v = Scene $ \_ _ f _ _ -> f b m v
+vertices b m v = Scene $ \_ _ f _ _ _ -> f b m v
 
 transformScene :: M44 Float -> Scene -> Scene
-transformScene m (Scene pic) = Scene $ \e a f c t -> t m (pic e a f c t)
+transformScene m (Scene pic) = Scene $ \e a f c b t -> t m (pic e a f c b t)
+
+sphericalMap :: Bitmap -> MappingMode -> Scene -> Scene
+sphericalMap bmp mode (Scene pic) = Scene $ \e a f c b t -> b bmp mode (pic e a f c b t)
 
 newtype Picture = Picture { unPicture :: Scene } deriving Monoid
 
@@ -128,7 +141,6 @@ newtype Sight = Sight { unSight
   -> (X.Box V2 Float -> M44 Float -> Bool -> Scene -> r)
   -> r
   }
-
 
 instance Monoid Sight where
   mempty = Sight $ \_ e _ _ -> e

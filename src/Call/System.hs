@@ -93,6 +93,7 @@ import Unsafe.Coerce
 import Foreign (castPtr, sizeOf, with)
 import qualified Data.Vector.Storable as V
 import Data.BoundingBox (Box(..))
+import qualified Codec.Picture as C
 
 type ObjS e s = Object e (System s)
 type AddrS e s = Address e (System s)
@@ -368,6 +369,16 @@ scrollCallback fo _ x y = do
 
 newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
 
+fetchTexture :: Given TextureStorage => C.Image C.PixelRGBA8 -> Int -> IO G.Texture
+fetchTexture bmp h = do
+  st <- readIORef (getTextureStorage given)
+  case IM.lookup h st of
+    Just t -> return t
+    Nothing -> do
+      t <- G.installTexture bmp
+      writeIORef (getTextureStorage given) $ IM.insert h t st
+      return t
+
 drawScene :: Given TextureStorage => Foundation s -> Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
 drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
   GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
@@ -376,7 +387,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
   with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 1 $ castPtr ptr
   GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "useTexture"
-  s (pure $ return ()) (liftA2 (>>)) (prim locT) col trans (RGBA 1 1 1 1, 0)
+  s (pure $ return ()) (liftA2 (>>)) (prim locT) col env trans (RGBA 1 1 1 1, 0)
   where
     shaderProg = G.theProgram $ theSystem fo
     prim locT Blank mode vs _ = do
@@ -386,13 +397,8 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs
     prim locT (Bitmap bmp _ h) mode vs _ = do
       GL.glUniform1i locT 1
-      st <- readIORef (getTextureStorage given)
-      (tex, _, _) <- case IM.lookup h st of
-        Just t -> return t
-        Nothing -> do
-          t <- G.installTexture bmp
-          writeIORef (getTextureStorage given) $ IM.insert h t st
-          return t
+      (tex, _, _) <- fetchTexture bmp h
+      GL.activeTexture $= GL.TextureUnit 0
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
@@ -405,12 +411,24 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
       GL.glUniform1i locN (unsafeCoerce $ n + 1)
       m (color0, n + 1)
       GL.glUniform1i locN (unsafeCoerce n)
+    env (Bitmap bmp _ h) mode m c = do
+      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
+      case mode of
+        MappingAdd -> GL.glUniform1i loc 1
+        MappingMultiply -> GL.glUniform1i loc 2
+      (tex, _, _) <- fetchTexture bmp h
+
+      GL.activeTexture $= GL.TextureUnit 1
+      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
+      GL.textureBinding GL.Texture2D $= Just tex
+      m c
+      GL.glUniform1i loc 0
     col f m (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "color"
       let c = f color0
       with c $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)
       m (c, n)
-      with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)      
+      with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
 
 drawSight :: Given TextureStorage => Foundation s -> Sight -> IO ()
 drawSight fo (Sight s) = do
