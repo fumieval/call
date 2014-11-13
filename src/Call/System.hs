@@ -33,8 +33,6 @@ module Call.System (
   System
   , runSystem
   , forkSystem
-  , ObjS
-  , AddrS
   -- * Time
   , stand
   , wait
@@ -85,22 +83,19 @@ import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
 
-type ObjS e s = Object e (System s)
-type AddrS e s = Address' e (System s)
-
 setFPS :: Float -> System s ()
 setFPS f = mkSystem $ \fo -> writeIORef (targetFPS fo) f
 
 newtype System s a = System (ReaderT (Foundation s) IO a) deriving (Functor, Applicative, Monad)
 
 instance MonadObjective (System s) where
-  data Address e m (System s) = AddressS (MVar (Object e m))
-  AddressS m `invoke` e = do
+  data Instance e m (System s) = InstanceS (MVar (Object e m))
+  InstanceS m `invoke` e = do
     c <- liftIO $ takeMVar m
     return $ do
       (a, c') <- runObject c e
       return (liftIO (putMVar m c') >> return a)
-  new v = liftIO $ AddressS `fmap` newMVar v
+  new v = liftIO $ InstanceS `fmap` newMVar v
 
 unSystem :: Foundation s -> System s a -> IO a
 unSystem f m = unsafeCoerce m f
