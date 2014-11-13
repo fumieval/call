@@ -13,7 +13,6 @@
 module Call.Internal.GLFW where
 import Control.Bool
 import Control.Applicative
-import Control.Monad.IO.Class
 import Control.Lens
 import Data.IORef
 import Call.Types
@@ -106,6 +105,7 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   return $ System rbox win prog
 
+compileShader :: FilePath -> GL.Shader -> IO ()
 compileShader path shader = do
   src <- getDataFileName path >>= Text.readFile
   GL.shaderSourceBS shader $= Text.encodeUtf8 src

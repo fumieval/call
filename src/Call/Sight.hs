@@ -22,6 +22,7 @@ module Call.Sight (Affine(..)
     , Figure(..)
     , Picture(..)
     , bitmap
+    , toward
     , Scene(..)
     , transformScene
     , vertices

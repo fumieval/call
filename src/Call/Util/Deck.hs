@@ -26,7 +26,6 @@ import Control.Monad.State.Strict
 import Call.Data.Wave
 import Control.Object
 import Data.OpenUnion1.Clean
-import Call.Event
 
 data Deck = Deck
   { _src :: Maybe (Source (V2 Float))
@@ -35,7 +34,7 @@ data Deck = Deck
   , _playing :: !Bool
   , _sampleRate :: !Float }
 
-type Methods = State Deck |> Audio |> Nil
+type Methods = State Deck |> Request (Time, Int) WaveChunk |> Nil
 --
 source :: Lens' Deck (Maybe (Source (V2 Float)))
 source f s = f (_src s) <&> \a -> s { _src = a }
@@ -52,7 +51,7 @@ sampleRate f s = f (_sampleRate s) <&> \a -> s { _sampleRate = a }
 empty :: Monad m => Object Methods m
 empty = sharing handle $ Deck Nothing 0 1 False 44100 where -- FIXME: sample rate
 
-handle :: MonadState Deck m => Audio a -> m a
+handle :: MonadState Deck m => Request (Time, Int) WaveChunk a -> m a
 handle = acceptM $ \(dt0, n) -> use source >>= \case
   Just (Source s) -> do
     pl <- use playing

@@ -6,7 +6,6 @@ module Call ( -- * System
     module Call.System,
     module Call.Types,
     module Call.TH,
-    module Call.Event,
     module Call.Data.Wave,
     -- * Reexports
     module Control.Monad,
@@ -23,7 +22,6 @@ module Call ( -- * System
 
 import Call.TH
 import Call.Types
-import Call.Event
 import Call.Data.Wave
 import Call.Sight
 import Call.System

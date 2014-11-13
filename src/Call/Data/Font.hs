@@ -24,9 +24,7 @@ module Call.Data.Font
 import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad
-import Data.IORef
 import Data.BoundingBox
-import qualified Data.Map as M
 import qualified Data.Vector.Storable as V
 import Linear
 import Call.Data.Bitmap

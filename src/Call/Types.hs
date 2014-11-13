@@ -13,6 +13,7 @@
 module Call.Types (
     Time
     , Vec2
+    , WaveChunk
     , WindowMode(..)
     , BoundingBox2
     , MouseEvent(..)
@@ -38,6 +39,7 @@ import Foreign.Ptr
 import Call.Data.Bitmap
 
 type Time = Float
+type WaveChunk = [V2 Float]
 
 data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read)
 
@@ -209,7 +211,10 @@ data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 Float)
   , vUV :: {-# UNPACK #-} !(V2 Float)
   , vNormal :: {-# UNPACK #-} !(V3 Float) }
 
+align1 :: Int
 align1 = sizeOf (vPos undefined)
+
+align2 :: Int
 align2 = align1 + sizeOf (vUV undefined)
 
 instance Storable Vertex where

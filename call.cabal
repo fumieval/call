@@ -25,7 +25,6 @@ library
     Call.TH
     Call.System
     Call.Sight
-    Call.Event
     Call.Internal.GLFW
     Call.Internal.PortAudio
     Call.Data.Wave
@@ -61,7 +60,7 @@ library
     freetype2 >=0.1 && <0.2,
     random ==1.*,
     hashable >=1.2 && <1.3,
-    objective >= 0.4 && <0.5,
+    objective >= 0.4.1 && <0.5,
     bindings-portaudio,
     clean-unions >= 0.1 && <0.3,
     text >= 1.0 && <1.5,

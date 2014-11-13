@@ -63,27 +63,27 @@ callback f (castPtr -> _) (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
 
 with :: MonadIO m => Float -> Int -> (Int -> IO [V2 Float]) -> m a -> m a
 with rate buf f m = do
-    w c'Pa_Initialize
-    cb <- liftIO $ mk'PaStreamCallback $ callback f
-    
-    ps <- liftIO malloc
-    w $ c'Pa_OpenDefaultStream ps
-        0
-        2
-        1 -- Float
-        (realToFrac rate)
-        (fromIntegral buf)
-        cb
-        nullPtr
-    s <- liftIO $ peek ps
+  w c'Pa_Initialize
+  cb <- liftIO $ mk'PaStreamCallback $ callback f
+  
+  ps <- liftIO malloc
+  w $ c'Pa_OpenDefaultStream ps
+      0
+      2
+      1 -- Float
+      (realToFrac rate)
+      (fromIntegral buf)
+      cb
+      nullPtr
+  s <- liftIO $ peek ps
 
-    w $ c'Pa_StartStream s
-    r <- m
-    w $ c'Pa_StopStream s
-    w $ c'Pa_CloseStream s
-    w $ c'Pa_Terminate
-    return r
-    where
-      w n = do
-        r <- liftIO n
-        unless (r == 0) $ liftIO $ throwIO $ fromErrorCode r
+  w $ c'Pa_StartStream s
+  r <- m
+  w $ c'Pa_StopStream s
+  w $ c'Pa_CloseStream s
+  w $ c'Pa_Terminate
+  return r
+  where
+    w n = do
+      r <- liftIO n
+      unless (r == 0) $ liftIO $ throwIO $ fromErrorCode r

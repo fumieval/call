@@ -38,6 +38,7 @@ module Call.System (
   -- * Time
   , stand
   , wait
+  , getTime
   , setFPS
   -- * Raw input
   , keyPress
@@ -50,73 +51,56 @@ module Call.System (
   , gamepadButtons
   , gamepadAxes
   -- * Component
-  , newGraphic
-  , newAudio
-  , newKeyboard
-  , newMouse
-  , newJoypad
   , linkGraphic
   , linkAudio
   , linkKeyboard
   , linkMouse
-  , linkJoypad
-  , unlinkGraphic
-  , unlinkAudio
-  , unlinkKeyboard
-  , unlinkMouse
-  , unlinkJoypad) where
+  , linkGamepad) where
 
-import Data.Maybe
-import Data.Color
-import Control.Lens
 import Call.Data.Bitmap
 import Call.Sight
 import Call.Types
-import Call.Event
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
+import Control.Lens
+import Control.Monad.Objective
 import Control.Monad.Reader
 import Control.Object
-import Control.Monad.Objective
+import Data.BoundingBox (Box(..))
+import Data.Color
 import Data.IORef
-import Data.Reflection
+import Data.Maybe
+import Data.Monoid
+import Foreign (castPtr, sizeOf, with)
+import Graphics.Rendering.OpenGL.GL.StateVar
 import Linear
 import qualified Call.Internal.GLFW as G
-import qualified Data.IntMap.Strict as IM
-import qualified Graphics.UI.GLFW as GLFW
 import qualified Call.Internal.PortAudio as PA
-import Graphics.Rendering.OpenGL.GL.StateVar
-import qualified Graphics.Rendering.OpenGL.Raw as GL
-import qualified Graphics.Rendering.OpenGL.GL as GL
-import Unsafe.Coerce
-import Foreign (castPtr, sizeOf, with)
-import qualified Data.Vector.Storable as V
-import Data.BoundingBox (Box(..))
 import qualified Codec.Picture as C
+import qualified Data.IntMap.Strict as IM
+import qualified Data.Vector.Storable as V
+import qualified Graphics.Rendering.OpenGL.GL as GL
+import qualified Graphics.Rendering.OpenGL.Raw as GL
+import qualified Graphics.UI.GLFW as GLFW
+import Unsafe.Coerce
 
 type ObjS e s = Object e (System s)
-type AddrS e s = Address e (System s)
-
-newGraphic :: (Lift Graphic e) => ObjS e s -> System s (AddrS e s)
-newGraphic o = new o >>= \a -> linkGraphic a >> return a
-
-newAudio :: (Lift Audio e) => ObjS e s -> System s (AddrS e s)
-newAudio o = new o >>= \a -> linkAudio a >> return a
-
-newKeyboard :: (Lift Keyboard e) => ObjS e s -> System s (AddrS e s)
-newKeyboard o = new o >>= \a -> linkKeyboard a >> return a
-
-newMouse :: (Lift Mouse e) => ObjS e s -> System s (AddrS e s)
-newMouse o = new o >>= \a -> linkMouse a >> return a
-
-newJoypad :: (Lift Joypad e) => ObjS e s -> System s (AddrS e s)
-newJoypad o = new o >>= \a -> linkJoypad a >> return a
+type AddrS e s = Address' e (System s)
 
 setFPS :: Float -> System s ()
 setFPS f = mkSystem $ \fo -> writeIORef (targetFPS fo) f
 
 newtype System s a = System (ReaderT (Foundation s) IO a) deriving (Functor, Applicative, Monad)
+
+instance MonadObjective (System s) where
+  data Address e m (System s) = AddressS (MVar (Object e m))
+  AddressS m `invoke` e = do
+    c <- liftIO $ takeMVar m
+    return $ do
+      (a, c') <- runObject c e
+      return (liftIO (putMVar m c') >> return a)
+  new v = liftIO $ AddressS `fmap` newMVar v
 
 unSystem :: Foundation s -> System s a -> IO a
 unSystem f m = unsafeCoerce m f
@@ -127,14 +111,38 @@ mkSystem = unsafeCoerce
 forkSystem :: System s () -> System s ThreadId
 forkSystem m = mkSystem $ \fo -> forkIO (unSystem fo m)
 
+linkGraphic :: (Time -> System s Sight) -> System s ()
+linkGraphic f = mkSystem $ \fo -> do
+  g <- readIORef $ coreGraphic fo
+  writeIORef (coreGraphic fo) $ \dt -> liftA2 (<>) (f dt) (g dt)
+
+linkAudio :: (Time -> Int -> System s WaveChunk) -> System s ()
+linkAudio f = mkSystem $ \fo -> do
+  g <- readIORef $ coreAudio fo
+  writeIORef (coreAudio fo) $ \dt n -> liftA2 (zipWith (+)) (f dt n) (g dt n)
+
+linkKeyboard :: (Chatter Key -> System s ()) -> System s ()
+linkKeyboard f = mkSystem $ \fo -> do
+  g <- readIORef $ coreKeyboard fo
+  writeIORef (coreKeyboard fo) $ \k -> f k >> g k
+
+linkMouse :: (MouseEvent -> System s ()) -> System s ()
+linkMouse f = mkSystem $ \fo -> do
+  g <- readIORef $ coreMouse fo
+  writeIORef (coreMouse fo) $ \k -> f k >> g k
+
+linkGamepad :: (GamepadEvent -> System s ()) -> System s ()
+linkGamepad f = mkSystem $ \fo -> do
+  g <- readIORef $ coreJoypad fo
+  writeIORef (coreJoypad fo) $ \k -> f k >> g k
+
 data Foundation s = Foundation
-  { newObjectId :: MVar Int
-  , sampleRate :: Float
-  , coreGraphic :: IORef (IM.IntMap (Member Graphic s))
-  , coreAudio :: IORef (IM.IntMap (Member Audio s))
-  , coreKeyboard :: IORef (IM.IntMap (Member Keyboard s))
-  , coreMouse :: IORef (IM.IntMap (Member Mouse s))
-  , coreJoypad :: IORef (IM.IntMap (Member Joypad s))
+  { sampleRate :: Float
+  , coreGraphic :: IORef (Time -> System s Sight)
+  , coreAudio :: IORef (Time -> Int -> System s [V2 Float])
+  , coreKeyboard :: IORef (Chatter Key -> System s ())
+  , coreMouse :: IORef (MouseEvent -> System s ())
+  , coreJoypad :: IORef (GamepadEvent -> System s ())
   , theTime :: MVar Time
   , theSystem :: G.System
   , targetFPS :: IORef Float
@@ -147,13 +155,12 @@ runSystem :: WindowMode -> BoundingBox2 -> (forall s. System s a) -> IO (Maybe a
 runSystem mode box m = do
   sys <- G.beginGLFW mode box
   f <- Foundation
-    <$> newMVar 0
-    <*> pure 44100 -- FIX THIS
-    <*> newIORef IM.empty
-    <*> newIORef IM.empty
-    <*> newIORef IM.empty
-    <*> newIORef IM.empty
-    <*> newIORef IM.empty
+    <$> pure 44100 -- FIX THIS
+    <*> newIORef (const $ return mempty)
+    <*> newIORef (\_ n -> return $ replicate n zero)
+    <*> newIORef (const $ return ())
+    <*> newIORef (const $ return ())
+    <*> newIORef (const $ return ())
     <*> newMVar 0
     <*> pure sys
     <*> newIORef 60
@@ -189,36 +196,6 @@ runSystem mode box m = do
   G.endGLFW sys
   tryTakeMVar ref
 
-linkMouse :: Lift Mouse e => AddrS e s -> System s ()
-linkMouse (Control i mc) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.insert i (Member lift_ mc)
-
-linkKeyboard :: Lift Keyboard e => AddrS e s -> System s ()
-linkKeyboard (Control i mc) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.insert i (Member lift_ mc)
-
-linkGraphic :: Lift Graphic e => AddrS e s -> System s ()
-linkGraphic (Control i mc) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.insert i (Member lift_ mc)
-
-linkAudio :: Lift Audio e => AddrS e s -> System s ()
-linkAudio (Control i mc) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.insert i (Member lift_ mc)
-
-linkJoypad :: Lift Joypad e => AddrS e s -> System s ()
-linkJoypad (Control i mc) = mkSystem $ \fo -> modifyIORef (coreJoypad fo) $ IM.insert i (Member lift_ mc)
-
-unlinkMouse :: AddrS e s -> System s ()
-unlinkMouse (Control i _) = mkSystem $ \fo -> modifyIORef (coreMouse fo) $ IM.delete i
-
-unlinkKeyboard :: AddrS e s -> System s ()
-unlinkKeyboard (Control i _) = mkSystem $ \fo -> modifyIORef (coreKeyboard fo) $ IM.delete i
-
-unlinkGraphic :: AddrS e s -> System s ()
-unlinkGraphic (Control i _) = mkSystem $ \fo -> modifyIORef (coreGraphic fo) $ IM.delete i
-
-unlinkAudio :: AddrS e s -> System s ()
-unlinkAudio (Control i _) = mkSystem $ \fo -> modifyIORef (coreAudio fo) $ IM.delete i
-
-unlinkJoypad :: AddrS e s -> System s ()
-unlinkJoypad (Control i _) = mkSystem $ \fo -> modifyIORef (coreJoypad fo) $ IM.delete i
-
 stand :: System s ()
 stand = mkSystem $ \fo -> takeMVar (theEnd fo)
 
@@ -228,6 +205,9 @@ wait dt = mkSystem $ \fo -> do
   Just t <- GLFW.getTime
   threadDelay $ floor $ (t0 - realToFrac t + dt) * 1000 * 1000
   putMVar (theTime fo) $ t0 + dt
+
+getTime :: System s Time
+getTime = mkSystem $ \fo -> readMVar (theTime fo)
 
 keyPress :: Key -> System s Bool
 keyPress k = mkSystem $ \fo -> fmap (/=GLFW.KeyState'Released)
@@ -262,38 +242,22 @@ gamepadButtons :: Gamepad -> System s [Bool]
 gamepadButtons (Gamepad i _) = mkSystem $ const
   $ maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
 
-data Member e s where
-  Member :: (forall x. e x -> f x) -> MVar (Object f (System s)) -> Member e s
-
 instance MonadIO (System s) where
     liftIO m = mkSystem $ const m
     {-# INLINE liftIO #-}
 
-instance MonadObjective (System s) where
-  type Residence (System s) = System s
-  data Address e (System s) = Control　Int (MVar (Object e (System s)))
-  Control _ m .- e = mkSystem $ \fo -> push fo m e
-  new c = mkSystem $ \fo -> do
-    n <- takeMVar $ newObjectId fo
-    mc <- newMVar c
-    putMVar (newObjectId fo) (n + 1)
-    return (Control n mc)
-
-announce :: Foundation s -> IM.IntMap (Member (Request a ()) s) -> a -> IO ()
-announce fo ms r = forM_ (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request r
-
 pollGamepad :: Foundation s -> IO ()
 pollGamepad fo = do
-  ms <- readIORef (coreJoypad fo)
+  m <- readIORef (coreJoypad fo)
   ps <- IM.fromList <$> map (\p@(Gamepad i _) -> (i, p)) <$> unSystem fo getGamepads
   bs0 <- readIORef (theGamepadButtons fo)
 
   bs0' <- forM (IM.toList $ ps IM.\\ bs0) $ \(i, p@(Gamepad _ s)) -> do
-    announce fo ms $ PadConnection (Up p)
+    unSystem fo $ m $ PadConnection $ Up p
     return (i, (s, IM.empty))
 
   bs0_ <- forM (IM.toList $ bs0 IM.\\ ps) $ \(i, (s, _)) -> do
-    announce fo ms $ PadConnection (Down $ Gamepad i s)
+    unSystem fo $ m $ PadConnection $ Down $ Gamepad i s
     return (i, ())
 
   let bs1 = bs0 `IM.union` IM.fromList bs0' IM.\\ IM.fromList bs0_
@@ -301,8 +265,8 @@ pollGamepad fo = do
   ls <- forM (IM.toList ps) $ \(j, p@(Gamepad _ s)) -> do
     bs <- zip [0..] <$> unSystem fo (gamepadButtons p)
     forM_ bs $ \(i, v) -> case (v, maybe False id (bs1 ^? ix j . _2 . ix i)) of
-        (False, True) -> announce fo ms $ PadButton p (Up i)
-        (True, False) -> announce fo ms $ PadButton p (Down i)
+        (False, True) -> unSystem fo $ m $ PadButton p (Up i)
+        (True, False) -> unSystem fo $ m $ PadButton p (Down i)
         _ -> return ()
     return (j, (s, IM.fromList bs))
 
@@ -314,9 +278,9 @@ runGraphic fo t0 = do
   fps <- readIORef (targetFPS fo)
   let t1 = t0 + 1/fps
   G.beginFrame (theSystem fo)
-  ms <- readIORef (coreGraphic fo)
-  pics <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request (1/fps) -- is it appropriate?
-  give (TextureStorage (textures fo)) $ mapM_ (drawSight fo) pics
+  m <- readIORef (coreGraphic fo)
+  pic <- unSystem fo $ m (1/fps) -- is it appropriate?
+  drawSight fo pic
   b <- G.endFrame (theSystem fo)
   
   Just t' <- GLFW.getTime
@@ -330,57 +294,45 @@ runGraphic fo t0 = do
 audioProcess :: Foundation s -> Int -> IO [V2 Float]
 audioProcess fo n = do
   let dt = fromIntegral n / sampleRate fo
-  ms <- readIORef (coreAudio fo)
-  ws <- forM (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request (dt, n)
-  return $ foldr (zipWith (+)) (replicate n zero) ws
-
-push :: Foundation s -> MVar (Object e (System s)) -> e a -> IO a
-push fo mc e = do
-  c0 <- takeMVar mc
-  (a, c) <- unSystem fo $ runObject c0 e
-  putMVar mc c
-  return a
+  m <- readIORef (coreAudio fo)
+  unSystem fo $ m dt n
 
 keyCallback :: Foundation s -> GLFW.KeyCallback
 keyCallback fo _ k _ st _ = do
-  ms <- readIORef (coreKeyboard fo)
-  forM_ (IM.elems ms) $ \(Member e m) -> push fo m
-    $ e $ request $ case st of
-      GLFW.KeyState'Released -> Up (toEnum . fromEnum $ k :: Key)
-      _ -> Down (toEnum . fromEnum $ k :: Key)
+  m <- readIORef (coreKeyboard fo)
+  unSystem fo $ m $ case st of
+    GLFW.KeyState'Released -> Up (toEnum . fromEnum $ k :: Key)
+    _ -> Down (toEnum . fromEnum $ k :: Key)
 
 mouseButtonCallback :: Foundation s -> GLFW.MouseButtonCallback
 mouseButtonCallback fo _ btn st _ = do
-  ms <- readIORef (coreMouse fo)
-  forM_ (IM.elems ms) $ \(Member e m) -> push fo m
-    $ e $ request $ case st of
-      GLFW.MouseButtonState'Released -> Button $ Up (fromEnum btn)
-      _ -> Button $ Down (fromEnum btn)
+  m <- readIORef (coreMouse fo)
+  unSystem fo $ m $ case st of
+    GLFW.MouseButtonState'Released -> Button $ Up (fromEnum btn)
+    _ -> Button $ Down (fromEnum btn)
 
 cursorPosCallback :: Foundation s -> GLFW.CursorPosCallback
 cursorPosCallback fo _ x y = do
-  ms <- readIORef (coreMouse fo)
-  forM_ (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ Cursor $ fmap realToFrac $ V2 x y
+  m <- readIORef (coreMouse fo)
+  unSystem fo $ m $ Cursor $ fmap realToFrac $ V2 x y
 
 scrollCallback :: Foundation s -> GLFW.ScrollCallback
 scrollCallback fo _ x y = do
-  ms <- readIORef (coreMouse fo)
-  forM_ (IM.elems ms) $ \(Member e m) -> push fo m $ e $ request $ Scroll $ fmap realToFrac $ V2 x y
+  m <- readIORef (coreMouse fo)
+  unSystem fo $ m $ Scroll $ fmap realToFrac $ V2 x y
 
-newtype TextureStorage = TextureStorage { getTextureStorage :: IORef (IM.IntMap G.Texture) }
-
-fetchTexture :: Given TextureStorage => C.Image C.PixelRGBA8 -> Int -> IO G.Texture
-fetchTexture bmp h = do
-  st <- readIORef (getTextureStorage given)
+fetchTexture :: Foundation s -> C.Image C.PixelRGBA8 -> Int -> IO G.Texture
+fetchTexture fo bmp h = do
+  st <- readIORef (textures fo)
   case IM.lookup h st of
     Just t -> return t
     Nothing -> do
       t <- G.installTexture bmp
-      writeIORef (getTextureStorage given) $ IM.insert h t st
+      writeIORef (textures fo) $ IM.insert h t st
       return t
 
-drawScene :: Given TextureStorage => Foundation s -> Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
-drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
+drawScene :: Foundation s -> Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
+drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
   GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
 
   GL.currentProgram $= Just shaderProg
@@ -397,7 +349,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs
     prim locT (Bitmap bmp _ h) mode vs _ = do
       GL.glUniform1i locT 1
-      (tex, _, _) <- fetchTexture bmp h
+      (tex, _, _) <- fetchTexture fo bmp h
       GL.activeTexture $= GL.TextureUnit 0
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
@@ -416,13 +368,14 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
       case mode of
         MappingAdd -> GL.glUniform1i loc 1
         MappingMultiply -> GL.glUniform1i loc 2
-      (tex, _, _) <- fetchTexture bmp h
+      (tex, _, _) <- fetchTexture fo bmp h
 
       GL.activeTexture $= GL.TextureUnit 1
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
       m c
       GL.glUniform1i loc 0
+    env _ _ m c = m c
     col f m (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "color"
       let c = f color0
@@ -430,7 +383,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj b (Scene s) = do
       m (c, n)
       with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
 
-drawSight :: Given TextureStorage => Foundation s -> Sight -> IO ()
+drawSight :: Foundation s -> Sight -> IO ()
 drawSight fo (Sight s) = do
   b <- readIORef $ G.refRegion $ theSystem fo
   s b (return ()) (>>) (drawScene fo)
