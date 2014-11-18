@@ -41,19 +41,19 @@ import Call.Data.Bitmap
 type Time = Float
 type WaveChunk = [V2 Float]
 
-data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read)
+data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read, Typeable)
 
 type Vec2 = V2 Float
 
 type BoundingBox2 = Box V2 Float
 
-data Chatter a = Up a | Down a
+data Chatter a = Up a | Down a deriving (Show, Eq, Ord, Read, Typeable)
 
-data MouseEvent = Button (Chatter Int) | Cursor Vec2 | Scroll Vec2
+data MouseEvent = Button (Chatter Int) | Cursor Vec2 | Scroll Vec2 deriving (Show, Eq, Ord, Read, Typeable)
 
-data Gamepad = Gamepad Int String
+data Gamepad = Gamepad Int String deriving (Show, Eq, Ord, Read, Typeable)
 
-data GamepadEvent = PadButton Gamepad (Chatter Int) | PadConnection (Chatter Gamepad)
+data GamepadEvent = PadButton Gamepad (Chatter Int) | PadConnection (Chatter Gamepad) deriving (Show, Eq, Ord, Read, Typeable)
 
 data Key =
       KeyUnknown
@@ -210,6 +210,7 @@ data BlendMode = Normal
 data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 Float)
   , vUV :: {-# UNPACK #-} !(V2 Float)
   , vNormal :: {-# UNPACK #-} !(V3 Float) }
+  deriving (Show, Eq, Ord, Read, Typeable)
 
 align1 :: Int
 align1 = sizeOf (vPos undefined)

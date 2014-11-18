@@ -29,8 +29,8 @@ module Call.Sight (Affine(..)
     , Sight(..)
     , viewPicture
     , viewScene
-    , sphericalMap
-    , MappingMode(..)
+    , VFX(..)
+    , applyVFX
     , GL.PrimitiveMode(..)) where
 import qualified Call.Data.Bitmap as B
 import qualified Data.BoundingBox as X
@@ -59,7 +59,7 @@ class Affine a => Figure a where
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
-  $ \_ _ f _ _ _ -> f bmp GL.TriangleStrip
+  $ \_ _ f _ _ -> f bmp GL.TriangleStrip
     (V.fromList [V3 (-w/2) (-h/2) 0 `positionUV` V2 0 0
         , V3 (w/2) (-h/2) 0 `positionUV` V2 1 0
         , V3 (-w/2) (h/2) 0 `positionUV` V2 0 1
@@ -75,13 +75,21 @@ newtype Scene = Scene { unScene :: forall r.
   r
   -> (r -> r -> r)
   -> (B.Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> r)
-  -> ((RGBA -> RGBA) -> r -> r)
-  -> (Bitmap -> MappingMode -> r -> r)
+  -> (VFX r -> r)
   -> (M44 Float -> r -> r)
   -> r
   }
 
-data MappingMode = MappingAdd | MappingMultiply
+data VFX r = SphericalAdd Bitmap r
+  | SphericalMultiply Bitmap r
+  | Diffuse RGBA r
+  deriving Functor
+  {-
+  | Opacity r
+  | Light RGBA Float (V3 Float) (V4 Float)
+  | Specular RGB
+  | Ambient RGB
+  -}
 
 instance Affine Scene where
   type Vec Scene = V3 Float
@@ -95,7 +103,7 @@ instance Affine Scene where
   translate v = transformScene $ translation .~ v $ eye4
 
 instance Figure Scene where
-  color col (Scene s) = Scene $ \e a f c b t -> c (multRGBA col) (s e a f c b t)
+  color col (Scene s) = Scene $ \e a f b t -> b (Diffuse col (s e a f b t))
   line = primitive GL.LineStrip
   polygon = primitive GL.Polygon
   polygonOutline = primitive GL.LineLoop
@@ -105,20 +113,20 @@ instance Figure Scene where
 unit_circle n = map angle [0..2*pi/n]
 -}
 instance Monoid Scene where
-  mempty = Scene $ \e _ _ _ _ _ -> e
-  mappend (Scene x) (Scene y) = Scene $ \e a f c b t -> a (x e a f c b t) (y e a f c b t)
+  mempty = Scene $ \e _ _ _ _ -> e
+  mappend (Scene x) (Scene y) = Scene $ \e a f b t -> a (x e a f b t) (y e a f b t)
 
 primitive :: GL.PrimitiveMode -> [Vec Scene] -> Scene
-primitive m v = Scene $ \_ _ f _ _ _ -> f Blank m (V.fromList $ map positionOnly v)
+primitive m v = Scene $ \_ _ f _ _ -> f Blank m (V.fromList $ map positionOnly v)
 
 vertices :: B.Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> Scene
-vertices b m v = Scene $ \_ _ f _ _ _ -> f b m v
+vertices b m v = Scene $ \_ _ f _ _ -> f b m v
 
 transformScene :: M44 Float -> Scene -> Scene
-transformScene m (Scene pic) = Scene $ \e a f c b t -> t m (pic e a f c b t)
+transformScene m (Scene pic) = Scene $ \e a f b t -> t m (pic e a f b t)
 
-sphericalMap :: Bitmap -> MappingMode -> Scene -> Scene
-sphericalMap bmp mode (Scene pic) = Scene $ \e a f c b t -> b bmp mode (pic e a f c b t)
+applyVFX :: VFX Scene -> Scene
+applyVFX vf = Scene $ \e a f b t -> b $ fmap (\(Scene s) -> s e a f b t) vf
 
 newtype Picture = Picture { unPicture :: Scene } deriving Monoid
 

@@ -334,7 +334,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
   with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 1 $ castPtr ptr
   GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "useTexture"
-  s (pure $ return ()) (liftA2 (>>)) (prim locT) col env trans (RGBA 1 1 1 1, 0)
+  s (pure $ return ()) (liftA2 (>>)) (prim locT) fx trans (RGBA 1 1 1 1, 0)
   where
     shaderProg = G.theProgram $ theSystem fo
     prim locT Blank mode vs _ = do
@@ -358,11 +358,15 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.glUniform1i locN (unsafeCoerce $ n + 1)
       m (color0, n + 1)
       GL.glUniform1i locN (unsafeCoerce n)
-    env (Bitmap bmp _ h) mode m c = do
+    fx (Diffuse col m) (color0, n) = do
+      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "color"
+      let c = multRGBA col color0
+      with c $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)
+      m (c, n)
+      with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
+    fx (SphericalAdd (Bitmap bmp _ h) m) c = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
-      case mode of
-        MappingAdd -> GL.glUniform1i loc 1
-        MappingMultiply -> GL.glUniform1i loc 2
+      GL.glUniform1i loc 1
       (tex, _, _) <- fetchTexture fo bmp h
 
       GL.activeTexture $= GL.TextureUnit 1
@@ -370,13 +374,18 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.textureBinding GL.Texture2D $= Just tex
       m c
       GL.glUniform1i loc 0
-    env _ _ m c = m c
-    col f m (color0, n) = do
-      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "color"
-      let c = f color0
-      with c $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)
-      m (c, n)
-      with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
+    fx (SphericalAdd Blank m) c = m c
+    fx (SphericalMultiply (Bitmap bmp _ h) m) c = do
+      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
+      GL.glUniform1i loc 2
+      (tex, _, _) <- fetchTexture fo bmp h
+
+      GL.activeTexture $= GL.TextureUnit 1
+      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
+      GL.textureBinding GL.Texture2D $= Just tex
+      m c
+      GL.glUniform1i loc 0
+    fx (SphericalMultiply Blank m) c = m c
 
 drawSight :: Foundation s -> Sight -> IO ()
 drawSight fo (Sight s) = do
