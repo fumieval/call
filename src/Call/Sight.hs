@@ -5,6 +5,7 @@
   , Rank2Types
   , FlexibleInstances
   , UndecidableInstances
+  , ViewPatterns
   , ScopedTypeVariables
   , GeneralizedNewtypeDeriving #-}
 -----------------------------------------------------------------------------
@@ -50,6 +51,7 @@ class Affine a where
   translate :: Vec a -> a -> a
 
 class Affine a => Figure a where
+  primitive :: GL.PrimitiveMode -> [Vec a] -> a
   color :: RGBA -> a -> a
   line :: [Vec a] -> a
   polygon :: [Vec a] -> a
@@ -67,7 +69,7 @@ bitmap bmp = Picture $ Scene
   V2 w h = fmap fromIntegral $ B.size bmp
 
 toward :: V3 Float -> Picture -> Scene
-toward n@(V3 x y z) (Picture s) = transformScene
+toward n@((^/norm n) -> V3 x y z) (Picture s) = transformScene
   (m33_to_m44 $ fromQuaternion $ axisAngle (V3 (-y) x 0) $ acos $ z / norm n)
   s
 
@@ -103,21 +105,23 @@ instance Affine Scene where
   translate v = transformScene $ translation .~ v $ eye4
 
 instance Figure Scene where
+  primitive m vs = Scene $ \_ _ f _ _ -> f Blank m (V.fromList $ map positionOnly vs)
   color col (Scene s) = Scene $ \e a f b t -> b (Diffuse col (s e a f b t))
   line = primitive GL.LineStrip
   polygon = primitive GL.Polygon
   polygonOutline = primitive GL.LineLoop
-{-
-  circle = unit_circle
+  circle v = toward v $ circle $ norm v
+  circleOutline v = toward v $ circleOutline $ norm v
 
-unit_circle n = map angle [0..2*pi/n]
--}
+unit_circle :: Int -> [V2 Float]
+unit_circle n = map angle [0,2*pi/fromIntegral n..2*pi]
+
 instance Monoid Scene where
   mempty = Scene $ \e _ _ _ _ -> e
   mappend (Scene x) (Scene y) = Scene $ \e a f b t -> a (x e a f b t) (y e a f b t)
 
-primitive :: GL.PrimitiveMode -> [Vec Scene] -> Scene
-primitive m v = Scene $ \_ _ f _ _ -> f Blank m (V.fromList $ map positionOnly v)
+v2ToV3 :: Num a => V2 a -> V3 a
+v2ToV3 (V2 x y) = V3 x y 0
 
 vertices :: B.Bitmap -> GL.PrimitiveMode -> V.Vector Vertex -> Scene
 vertices b m v = Scene $ \_ _ f _ _ -> f b m v
@@ -140,7 +144,13 @@ instance Affine Picture where
     m = V4 (V4 x 0 0 0) (V4 0 y 0 0) (V4 0 0 1 0) (V4 0 0 0 1)
 
 instance Figure Picture where
+  primitive m v = Picture $ primitive m $ map v2ToV3 v
   color col (Picture s) = Picture (color col s)
+  line = primitive GL.LineStrip
+  polygon = primitive GL.Polygon
+  polygonOutline = primitive GL.LineLoop
+  circle r = polygon $ map (^*r) $ unit_circle 33
+  circleOutline r = polygonOutline $ map (^*r) $ unit_circle 33
 
 newtype Sight = Sight { unSight
   :: forall r. 
