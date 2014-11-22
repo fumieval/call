@@ -172,7 +172,7 @@ initializeGL = do
   
   GL.lineSmooth $= GL.Enabled
   GL.textureFunction $= GL.Combine
-  GL.clearColor $= GL.Color4 0.5 0.2 1 1
+  GL.clearColor $= GL.Color4 1 1 1 1
   GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
   GL.glUniform1i loc 0
 

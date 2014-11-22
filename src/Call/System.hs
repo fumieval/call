@@ -9,11 +9,13 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -48,12 +50,14 @@ module Call.System (
   , getGamepads
   , gamepadButtons
   , gamepadAxes
+  , clearColor
   -- * Component
   , linkGraphic
   , linkAudio
   , linkKeyboard
   , linkMouse
-  , linkGamepad) where
+  , linkGamepad
+  ) where
 
 import Call.Data.Bitmap
 import Call.Sight
@@ -61,12 +65,14 @@ import Call.Types
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
+import Control.Elevator
 import Control.Lens
 import Control.Monad.Objective
 import Control.Monad.Reader
 import Control.Object
 import Data.BoundingBox (Box(..))
 import Data.Color
+import Data.OpenUnion1.Clean
 import Data.IORef
 import Data.Maybe
 import Data.Monoid
@@ -96,6 +102,10 @@ instance MonadObjective (System s) where
       (a, c') <- runObject c e
       return (liftIO (putMVar m c') >> return a)
   new v = liftIO $ InstanceS `fmap` newMVar v
+
+instance Tower (System s) where
+  type Floors (System s) = IO :> Empty
+  toLoft = liftIO ||> exhaust
 
 unSystem :: Foundation s -> System s a -> IO a
 unSystem f m = unsafeCoerce m f
@@ -237,6 +247,9 @@ gamepadButtons :: Gamepad -> System s [Bool]
 gamepadButtons (Gamepad i _) = mkSystem $ const
   $ maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
 
+clearColor :: RGBA -> System s ()
+clearColor col = liftIO $ GL.clearColor $= unsafeCoerce col
+
 instance MonadIO (System s) where
     liftIO m = mkSystem $ const m
     {-# INLINE liftIO #-}
@@ -361,14 +374,13 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
     fx (Diffuse col m) (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "color"
       let c = multRGBA col color0
-      with c $ \ptr -> GL.glUniform4iv loc 1 (castPtr ptr)
+      with c $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
       m (c, n)
       with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
     fx (SphericalAdd (Bitmap bmp _ h) m) c = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
       GL.glUniform1i loc 1
       (tex, _, _) <- fetchTexture fo bmp h
-
       GL.activeTexture $= GL.TextureUnit 1
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
