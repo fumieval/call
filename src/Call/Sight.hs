@@ -68,7 +68,7 @@ bitmap bmp = Picture $ Scene
         , V3 (w/2) (h/2) 0 `positionUV` V2 1 1]) where
   V2 w h = fmap fromIntegral $ B.size bmp
 
-toward :: V3 Float -> Picture -> Scene
+toward :: Vec3 -> Picture -> Scene
 toward n@((^/norm n) -> V3 x y z) (Picture s) = transformScene
   (m33_to_m44 $ fromQuaternion $ axisAngle (V3 (-y) x 0) $ acos $ z / norm n)
   s

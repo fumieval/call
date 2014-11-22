@@ -111,10 +111,10 @@ linkGraphic f = mkSystem $ \fo -> do
   g <- readIORef $ coreGraphic fo
   writeIORef (coreGraphic fo) $ \dt -> liftA2 (<>) (f dt) (g dt)
 
-linkAudio :: (Time -> Int -> System s WaveChunk) -> System s ()
+linkAudio :: (Time -> Int -> System s (V.Vector Stereo)) -> System s ()
 linkAudio f = mkSystem $ \fo -> do
   g <- readIORef $ coreAudio fo
-  writeIORef (coreAudio fo) $ \dt n -> liftA2 (zipWith (+)) (f dt n) (g dt n)
+  writeIORef (coreAudio fo) $ \dt n -> liftA2 (V.zipWith (+)) (f dt n) (g dt n)
 
 linkKeyboard :: (Chatter Key -> System s ()) -> System s ()
 linkKeyboard f = mkSystem $ \fo -> do
@@ -134,7 +134,7 @@ linkGamepad f = mkSystem $ \fo -> do
 data Foundation s = Foundation
   { sampleRate :: Float
   , coreGraphic :: IORef (Time -> System s Sight)
-  , coreAudio :: IORef (Time -> Int -> System s [V2 Float])
+  , coreAudio :: IORef (Time -> Int -> System s (V.Vector (V2 Float)))
   , coreKeyboard :: IORef (Chatter Key -> System s ())
   , coreMouse :: IORef (MouseEvent -> System s ())
   , coreJoypad :: IORef (GamepadEvent -> System s ())
@@ -146,13 +146,13 @@ data Foundation s = Foundation
   , theGamepadButtons :: IORef (IM.IntMap (String, IM.IntMap Bool))
   }
 
-runSystem :: WindowMode -> BoundingBox2 -> (forall s. System s a) -> IO (Maybe a)
+runSystem :: WindowMode -> Box V2 Float -> (forall s. System s a) -> IO (Maybe a)
 runSystem mode box m = do
   sys <- G.beginGLFW mode box
   f <- Foundation
     <$> pure 44100 -- FIX THIS
     <*> newIORef (const $ return mempty)
-    <*> newIORef (\_ n -> return $ replicate n zero)
+    <*> newIORef (\_ n -> return $ V.replicate n zero)
     <*> newIORef (const $ return ())
     <*> newIORef (const $ return ())
     <*> newIORef (const $ return ())
@@ -286,7 +286,7 @@ runGraphic fo t0 = do
       _ | b -> putMVar (theEnd fo) ()
         | otherwise -> runGraphic fo t1
 
-audioProcess :: Foundation s -> Int -> IO [V2 Float]
+audioProcess :: Foundation s -> Int -> IO (V.Vector Stereo)
 audioProcess fo n = do
   let dt = fromIntegral n / sampleRate fo
   m <- readIORef (coreAudio fo)

@@ -10,6 +10,9 @@ import Control.Monad
 import Linear
 import Control.Exception
 import Data.Typeable
+import qualified Data.Vector.Storable as V
+import qualified Data.Vector.Storable.Mutable as MV
+
 data Error = NotInitialized
   | UnanticipatedHostError
   | InvalidChannelCount
@@ -56,12 +59,13 @@ getHostApis = liftIO $ do
       name <- peekCAString $ c'PaHostApiInfo'name info
       return (Host (fromIntegral i) name)
 -}
-callback :: (Int -> IO [V2 Float]) -> Ptr () -> Ptr () -> CULong -> x -> y -> z -> IO CUInt
-callback f (castPtr -> _) (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
-  f n >>= pokeArray pout
+callback :: (Int -> IO (V.Vector (V2 Float))) -> Ptr () -> Ptr () -> CULong -> x -> y -> z -> IO CUInt
+callback f _ (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
+  fp <- newForeignPtr_ pout
+  f n >>= V.unsafeCopy (MV.unsafeFromForeignPtr0 fp n)
   return c'paContinue
 
-with :: MonadIO m => Float -> Int -> (Int -> IO [V2 Float]) -> m a -> m a
+with :: MonadIO m => Float -> Int -> (Int -> IO (V.Vector (V2 Float))) -> m a -> m a
 with rate buf f m = do
   w c'Pa_Initialize
   cb <- liftIO $ mk'PaStreamCallback $ callback f

@@ -35,7 +35,7 @@ import Foreign.C (CFloat)
 import Foreign (nullPtr, plusPtr, sizeOf)
 import Paths_call
 data System = System
-  { refRegion :: IORef BoundingBox2
+  { refRegion :: IORef (Box V2 Float)
   , theWindow :: GLFW.Window
   , theProgram :: GL.Program
   }
@@ -73,7 +73,7 @@ endFrame sys = do
   GLFW.pollEvents
   GLFW.windowShouldClose (theWindow sys)
 
-beginGLFW :: WindowMode -> BoundingBox2 -> IO System
+beginGLFW :: WindowMode -> Box V2 Float -> IO System
 beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   Encoding.setForeignEncoding Encoding.utf8
   let title = "call"

@@ -13,9 +13,9 @@
 module Call.Types (
     Time
     , Vec2
-    , WaveChunk
+    , Vec3
+    , Stereo
     , WindowMode(..)
-    , BoundingBox2
     , MouseEvent(..)
     , Gamepad(..)
     , GamepadEvent(..)
@@ -32,20 +32,16 @@ module Call.Types (
 import Control.Applicative
 import Linear
 import Data.Typeable
-import Data.BoundingBox
 import Data.Char
 import Foreign.Storable
 import Foreign.Ptr
 import Call.Data.Bitmap
 
 type Time = Float
-type WaveChunk = [V2 Float]
-
-data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read, Typeable)
-
+type Stereo = V2 Float
 type Vec2 = V2 Float
-
-type BoundingBox2 = Box V2 Float
+type Vec3 = V3 Float
+data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read, Typeable)
 
 data Chatter a = Up a | Down a deriving (Show, Eq, Ord, Read, Typeable)
 
@@ -207,9 +203,9 @@ data BlendMode = Normal
     | Screen
     deriving (Enum, Eq, Ord, Read, Show, Typeable)
 
-data Vertex = Vertex { vPos :: {-# UNPACK #-} !(V3 Float)
-  , vUV :: {-# UNPACK #-} !(V2 Float)
-  , vNormal :: {-# UNPACK #-} !(V3 Float) }
+data Vertex = Vertex { vPos :: {-# UNPACK #-} !Vec3
+  , vUV :: {-# UNPACK #-} !Vec2
+  , vNormal :: {-# UNPACK #-} !Vec3 }
   deriving (Show, Eq, Ord, Read, Typeable)
 
 align1 :: Int
@@ -219,7 +215,7 @@ align2 :: Int
 align2 = align1 + sizeOf (vUV undefined)
 
 instance Storable Vertex where
-  sizeOf _ = sizeOf (undefined :: V3 Float) + sizeOf (undefined :: V2 Float) + sizeOf (undefined :: V3 Float)
+  sizeOf _ = sizeOf (undefined :: Vec3) + sizeOf (undefined :: Vec2) + sizeOf (undefined :: Vec3)
   alignment _ = 0
   peek ptr = Vertex
     <$> peek (castPtr ptr)
@@ -230,8 +226,8 @@ instance Storable Vertex where
     poke (castPtr ptr `plusPtr` align1) t
     poke (castPtr ptr `plusPtr` align2) n
 
-positionUV :: V3 Float -> V2 Float -> Vertex
+positionUV :: Vec3 -> Vec2 -> Vertex
 positionUV v p = Vertex v p zero
 
-positionOnly :: V3 Float -> Vertex
+positionOnly :: Vec3 -> Vertex
 positionOnly v = Vertex v zero zero
