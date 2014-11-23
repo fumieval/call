@@ -20,10 +20,10 @@ main = runSystemDefault $ do
   src <- readWAVE "examples/hello-world.wav"
   deck <- new $ variable $ Call.Util.Deck.empty & source .~ sampleSource src
   linkAudio $ ((deck .-) .) . playback
-  linkGraphic $ \_ -> do
+  linkPicture $ \_ -> do
     let s x = (10 + max (log (realToFrac x) / log 10) (-10)) / 10
     V2 a b <- fmap (fmap s) $ deck .- currentRMS 1024
-    return $ viewPicture $ translate (V2 0 240) $ mconcat
+    return $ translate (V2 0 240) $ mconcat
       [color black $ polygonOutline [V2 0 0, V2 40 0, V2 40 (-240), V2 0 (-240)]
       ,color red $ mconcat [polygonOutline [V2 0 0, V2 16 0, V2 16 (-a * 240), V2 0 (-a * 240)]
         , polygonOutline [V2 24 0, V2 40 0, V2 40 (-b * 240), V2 24 (-b * 240)]]

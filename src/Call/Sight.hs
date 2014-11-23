@@ -30,9 +30,11 @@ module Call.Sight (Affine(..)
     , Sight(..)
     , viewPicture
     , viewScene
+    , fromPerspective
     , VFX(..)
     , applyVFX
-    , GL.PrimitiveMode(..)) where
+    , GL.PrimitiveMode(..)
+    ) where
 import qualified Call.Data.Bitmap as B
 import qualified Data.BoundingBox as X
 import Data.Monoid
@@ -60,38 +62,6 @@ class Affine a => Figure a where
   polygonOutline :: [Vec a] -> a
   circle :: Normal a -> a
   circleOutline :: Normal a -> a
-
-instance (Monoid a, Affine a, Monad m) => Affine (Strict.WriterT a m b) where
-  type Vec (Strict.WriterT a m b) = Vec a
-  type Normal (Strict.WriterT a m b) = Normal a
-  rotateOn n = Strict.censor (rotateOn n)
-  scale s = Strict.censor (scale s)
-  translate t = Strict.censor (translate t)
-
-instance (Monoid a, Figure a, Monad m) => Figure (Strict.WriterT a m ()) where
-  primitive m = Strict.tell . primitive m
-  color c = Strict.censor (color c)
-  line = Strict.tell . line
-  polygon = Strict.tell . polygon
-  polygonOutline = Strict.tell . polygonOutline
-  circle = Strict.tell . circle
-  circleOutline = Strict.tell . circleOutline
-
-instance (Monoid a, Affine a, Monad m) => Affine (Lazy.WriterT a m b) where
-  type Vec (Lazy.WriterT a m b) = Vec a
-  type Normal (Lazy.WriterT a m b) = Normal a
-  rotateOn n = Lazy.censor (rotateOn n)
-  scale s = Lazy.censor (scale s)
-  translate t = Lazy.censor (translate t)
-
-instance (Monoid a, Figure a, Monad m) => Figure (Lazy.WriterT a m ()) where
-  primitive m = Lazy.tell . primitive m
-  color c = Lazy.censor (color c)
-  line = Lazy.tell . line
-  polygon = Lazy.tell . polygon
-  polygonOutline = Lazy.tell . polygonOutline
-  circle = Lazy.tell . circle
-  circleOutline = Lazy.tell . circleOutline
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
@@ -202,5 +172,12 @@ instance Monoid Sight where
 viewPicture :: Picture -> Sight
 viewPicture (Picture s) = Sight $ \box@(X.Box (V2 x0 y0) (V2 x1 y1)) _ _ f -> f box (ortho x0 x1 y1 y0 (-1) 1) False s
 
-viewScene :: Float -> Float -> Float -> Scene -> Sight
-viewScene fov near far s = Sight $ \box _ _ f -> f box (perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far) True s
+viewScene :: Float -- ^ FOV
+  -> Float -- ^ Near plane
+  -> Float -- ^ Far plane
+  -> Scene -- ^ The scene
+  -> Sight
+viewScene fov near far = fromPerspective $ \box -> perspective fov (let V2 w h = box ^. X.size 0 in w/h) near far
+
+fromPerspective :: (X.Box V2 Float -> M44 Float) -> Scene -> Sight
+fromPerspective mat s = Sight $ \box _ _ f -> f box (mat box) True s

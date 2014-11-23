@@ -52,6 +52,7 @@ module Call.System (
   , gamepadAxes
   -- * Component
   , linkGraphic
+  , linkPicture
   , linkAudio
   , linkKeyboard
   , linkMouse
@@ -125,6 +126,9 @@ linkGraphic :: (Time -> System s Sight) -> System s ()
 linkGraphic f = mkSystem $ \fo -> do
   g <- readIORef $ coreGraphic fo
   writeIORef (coreGraphic fo) $ \dt -> liftA2 (<>) (f dt) (g dt)
+
+linkPicture :: (Time -> System s Picture) -> System s ()
+linkPicture f = linkGraphic (fmap viewPicture . f)
 
 linkAudio :: (Time -> Int -> System s (V.Vector Stereo)) -> System s ()
 linkAudio f = mkSystem $ \fo -> do
