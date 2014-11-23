@@ -16,6 +16,7 @@ currentRMS n = do
     $ sum $ map (fmap (^(2::Int)) . s) [t0, t0 + 1 / 44100..t]
 
 main = runSystemDefault $ do
+  setTitle "Hello, world!"
   src <- readWAVE "examples/hello-world.wav"
   deck <- new $ variable $ Call.Util.Deck.empty & source .~ sampleSource src
   linkAudio $ ((deck .-) .) . playback

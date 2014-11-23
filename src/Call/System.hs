@@ -50,13 +50,18 @@ module Call.System (
   , getGamepads
   , gamepadButtons
   , gamepadAxes
-  , clearColor
   -- * Component
   , linkGraphic
   , linkAudio
   , linkKeyboard
   , linkMouse
   , linkGamepad
+  -- * Others
+  , setTitle
+  , clearColor
+  , getBoundingBox
+  , setBoundingBox
+  , takeScreenshot
   ) where
 
 import Call.Data.Bitmap
@@ -250,9 +255,23 @@ gamepadButtons (Gamepad i _) = mkSystem $ const
 clearColor :: RGBA -> System s ()
 clearColor col = liftIO $ GL.clearColor $= unsafeCoerce col
 
+setBoundingBox :: Box V2 Float -> System s ()
+setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = mkSystem $ \fo -> do
+  GLFW.setWindowSize (G.theWindow $ theSystem fo) (floor (x1 - x0)) (floor (y1 - y0))
+  writeIORef (G.refRegion $ theSystem fo) box
+
+getBoundingBox :: System s (Box V2 Float)
+getBoundingBox = mkSystem $ \fo -> readIORef (G.refRegion $ theSystem fo)
+
+takeScreenshot :: System s Bitmap
+takeScreenshot = mkSystem $ \fo -> G.screenshot (theSystem fo) >>= liftImage'
+
+setTitle :: String -> System s ()
+setTitle str = mkSystem $ \fo -> GLFW.setWindowTitle (G.theWindow $ theSystem fo) str
+    
 instance MonadIO (System s) where
-    liftIO m = mkSystem $ const m
-    {-# INLINE liftIO #-}
+  liftIO m = mkSystem $ const m
+  {-# INLINE liftIO #-}
 
 pollGamepad :: Foundation s -> IO ()
 pollGamepad fo = do
