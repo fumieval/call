@@ -42,6 +42,8 @@ import Control.Lens
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import Data.Color
 import Call.Types
+import Control.Monad.Trans.Writer.Strict as Strict
+import Control.Monad.Trans.Writer.Lazy as Lazy
 
 class Affine a where
   type Vec a :: *
@@ -58,6 +60,38 @@ class Affine a => Figure a where
   polygonOutline :: [Vec a] -> a
   circle :: Normal a -> a
   circleOutline :: Normal a -> a
+
+instance (Monoid a, Affine a, Monad m) => Affine (Strict.WriterT a m b) where
+  type Vec (Strict.WriterT a m b) = Vec a
+  type Normal (Strict.WriterT a m b) = Normal a
+  rotateOn n = Strict.censor (rotateOn n)
+  scale s = Strict.censor (scale s)
+  translate t = Strict.censor (translate t)
+
+instance (Monoid a, Figure a, Monad m) => Figure (Strict.WriterT a m ()) where
+  primitive m = Strict.tell . primitive m
+  color c = Strict.censor (color c)
+  line = Strict.tell . line
+  polygon = Strict.tell . polygon
+  polygonOutline = Strict.tell . polygonOutline
+  circle = Strict.tell . circle
+  circleOutline = Strict.tell . circleOutline
+
+instance (Monoid a, Affine a, Monad m) => Affine (Lazy.WriterT a m b) where
+  type Vec (Lazy.WriterT a m b) = Vec a
+  type Normal (Lazy.WriterT a m b) = Normal a
+  rotateOn n = Lazy.censor (rotateOn n)
+  scale s = Lazy.censor (scale s)
+  translate t = Lazy.censor (translate t)
+
+instance (Monoid a, Figure a, Monad m) => Figure (Lazy.WriterT a m ()) where
+  primitive m = Lazy.tell . primitive m
+  color c = Lazy.censor (color c)
+  line = Lazy.tell . line
+  polygon = Lazy.tell . polygon
+  polygonOutline = Lazy.tell . polygonOutline
+  circle = Lazy.tell . circle
+  circleOutline = Lazy.tell . circleOutline
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
