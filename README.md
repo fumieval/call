@@ -15,8 +15,22 @@ Comparison
 | Window Refresh | Monadic       | Callback                 |
 | 2D drawing     | Monadic       | Monoidal                 |
 | 3D drawing     |               | Monoidal                 |
-| Text           | Monadic       | Objective                |
-| Audio          |               | Buffer-wise callback     |
+| Text           | Monadic       |                          |
+| Audio          |               | Callback                 |
 | Keyboard       | Monadic       | Callback, Monadic        |
 | Mouse          | Monadic       | Callback, Monadic        |
 | Gamepad        |               | Callback, Monadic        |
+
+Getting Started
+------
+    $ cabal update
+    $ cabal install bindings-portaudio
+    $ cabal install call
+
+```haskell
+import Call
+
+main = runSystemDefault $ do
+  linkPicture $ const $ color blue $ circleOutline 240
+  stand
+```
