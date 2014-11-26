@@ -31,6 +31,6 @@ Getting Started
 import Call
 
 main = runSystemDefault $ do
-  linkPicture $ const $ color blue $ circleOutline 240
+  linkPicture $ const $ return $ color blue $ circleOutline 240
   stand
 ```
