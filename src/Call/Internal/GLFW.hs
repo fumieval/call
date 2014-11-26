@@ -86,7 +86,7 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
     _ -> return Nothing
 
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
-  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 2
+  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 3
   GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
   GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
   GLFW.windowHint $ GLFW.WindowHint'Resizable $ mode == Resizable
@@ -97,7 +97,9 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   GLFW.swapInterval 1
   -- GL.clearColor $= GL.Color4 1 1 1 1
   
-  rbox <- newIORef bbox
+  (fw, fh) <- GLFW.getFramebufferSize win
+
+  rbox <- newIORef $ bbox & size zero .~ fmap fromIntegral (V2 fw fh)
 
   GLFW.setFramebufferSizeCallback win $ Just $ \_ w h -> do
       modifyIORef rbox $ size zero .~ fmap fromIntegral (V2 w h)
