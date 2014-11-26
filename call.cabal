@@ -81,5 +81,5 @@ executable hello-world
     buildable: True
   else
     buildable: False
-  build-depends: base == 4.*, call <= 0.1, lens == 4.*
+  build-depends: base == 4.*, call <= 0.2, lens == 4.*
   default-language:    Haskell2010
