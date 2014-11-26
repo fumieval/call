@@ -44,8 +44,6 @@ import Control.Lens
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import Data.Color
 import Call.Types
-import Control.Monad.Trans.Writer.Strict as Strict
-import Control.Monad.Trans.Writer.Lazy as Lazy
 
 class Affine a where
   type Vec a :: *
@@ -90,12 +88,6 @@ data VFX r = SphericalAdd Bitmap r
   | SphericalMultiply Bitmap r
   | Diffuse RGBA r
   deriving Functor
-  {-
-  | Opacity r
-  | Light RGBA Float (V3 Float) (V4 Float)
-  | Specular RGB
-  | Ambient RGB
-  -}
 
 instance Affine Scene where
   type Vec Scene = V3 Float
