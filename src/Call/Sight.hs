@@ -60,6 +60,7 @@ class Affine a => Figure a where
   polygonOutline :: [Vec a] -> a
   circle :: Normal a -> a
   circleOutline :: Normal a -> a
+  thickness :: Float -> a -> a
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
@@ -86,7 +87,10 @@ newtype Scene = Scene { unScene :: forall r.
 
 data VFX r = SphericalAdd Bitmap r
   | SphericalMultiply Bitmap r
+  | NormalMap Bitmap r
   | Diffuse RGBA r
+  | Specular (V3 Float) r
+  | Ambient (V3 Float) r
   deriving Functor
 
 instance Affine Scene where
