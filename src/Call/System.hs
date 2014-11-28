@@ -444,9 +444,8 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       withLoc "useEnv" $ \loc -> GL.glUniform1i loc 0
       withLoc "envMul" $ \loc -> GL.glUniform1f loc 0
     fx (SphericalMultiply Blank m) c = m c
-    fx (NormalMap (Bitmap bmp _ h) m) c = m c
-    withLoc s m = do
-      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
+    withLoc str m = do
+      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg str
       m loc
 
 drawSight :: Foundation s -> Sight -> IO ()

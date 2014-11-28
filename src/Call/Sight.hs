@@ -86,10 +86,10 @@ newtype Scene = Scene { unScene :: forall r.
 
 data VFX r = SphericalAdd Bitmap r
   | SphericalMultiply Bitmap r
-  | NormalMap Bitmap r
   | Diffuse RGBA r
-  | Specular (V3 Float) r
-  | Ambient (V3 Float) r
+--  | Specular (V3 Float) r
+--  | Ambient (V3 Float) r
+--  | NormalMap Bitmap r
   | EmbedIO (IO r)
   deriving Functor
 
