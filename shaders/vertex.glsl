@@ -8,10 +8,8 @@ out vec2 envUV;
 in vec3 in_Position;
 in vec2 in_UV;
 in vec3 in_Normal;
-attribute vec3 barycentric;
-varying vec3 lightDir;
-varying vec3 vBC;
-varying vec3 normal;
+out vec3 lightDir;
+out vec3 normal;
 
 void main(void) {
   mat4 model = mat4(1.0);
@@ -28,7 +26,6 @@ void main(void) {
     float m = 2.0 * sqrt( refl.x*refl.x + refl.y*refl.y + (refl.z+1.0)*(refl.z+1.0) );
     envUV = refl.xy / m + 0.5;
   }
-  vBC = barycentric;
   normal = in_Normal;
   lightDir = vec3(0.0);
 }

@@ -402,8 +402,8 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.glUniform1f locT 1
       (tex, _, _) <- fetchTexture fo bmp h
       GL.activeTexture $= GL.TextureUnit 0
-      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
+      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs

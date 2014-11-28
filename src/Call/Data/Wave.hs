@@ -33,7 +33,7 @@ readWAVE path = liftIO $ do
       rate = fromIntegral (waveFrameRate h)
       !dur = fromIntegral (V.length vec) / rate
       sample t
-        | t < 0 || t >= dur = zero
+        | t < 0 || t >= dur - (1/rate) = zero
         | otherwise = vec V.! round (t * rate)
   return $ Sample dur (Source sample)
   where

@@ -89,6 +89,7 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 3
   GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
   GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
+
   GLFW.windowHint $ GLFW.WindowHint'Resizable $ mode == Resizable
   win <- GLFW.createWindow ww wh title mon Nothing >>= maybe (fail "Failed to create a window") return
   GLFW.makeContextCurrent (Just win)
@@ -179,6 +180,15 @@ initializeGL = do
   GL.clearColor $= GL.Color4 1 1 1 1
   GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
   GL.glUniform1i loc 0
+  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "tex"
+  GL.glUniform1i loc 0
+  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "env"
+  GL.glUniform1i loc 1
+  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "envAdd"
+  GL.glUniform1f loc 0
+  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "envMul"
+  GL.glUniform1f loc 0
+
 
   return shaderProg
 

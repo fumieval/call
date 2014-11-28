@@ -1,5 +1,5 @@
 name:                call
-version:             0.1.1
+version:             0.1.1.1
 synopsis:            The call game engine
 description:         Call is a minimalistic game engine that supports 2D/3D graphics and sounds.
 homepage:            https://github.com/fumieval/call
@@ -16,7 +16,13 @@ data-files:
 cabal-version:       >=1.10
 
 flag BuildHelloWorld
-    default: False
+  default: False
+
+flag GLForwardCompat
+  default: True
+
+flag GLCoreProfile
+  default: True
 
 source-repository head
   type: git
