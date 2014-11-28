@@ -34,7 +34,7 @@ readWAVE path = liftIO $ do
       !dur = fromIntegral (V.length vec) / rate
       sample t
         | t < 0 || t >= dur = zero
-        | otherwise = vec V.! floor (t * rate)
+        | otherwise = vec V.! round (t * rate)
   return $ Sample dur (Source sample)
   where
     fr [a, b] = V2 (double2Float $ sampleToDouble a) (double2Float $ sampleToDouble b)

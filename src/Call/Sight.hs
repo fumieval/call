@@ -60,7 +60,6 @@ class Affine a => Figure a where
   polygonOutline :: [Vec a] -> a
   circle :: Normal a -> a
   circleOutline :: Normal a -> a
-  thickness :: Float -> a -> a
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
@@ -91,6 +90,7 @@ data VFX r = SphericalAdd Bitmap r
   | Diffuse RGBA r
   | Specular (V3 Float) r
   | Ambient (V3 Float) r
+  | EmbedIO (IO r)
   deriving Functor
 
 instance Affine Scene where
@@ -108,7 +108,7 @@ instance Figure Scene where
   primitive m vs = Scene $ \_ _ f _ _ -> f Blank m (V.fromList $ map positionOnly vs)
   color col (Scene s) = Scene $ \e a f b t -> b (Diffuse col (s e a f b t))
   line = primitive GL.LineStrip
-  polygon = primitive GL.Polygon
+  polygon = primitive GL.TriangleFan
   polygonOutline = primitive GL.LineLoop
   circle v = toward v $ circle $ norm v
   circleOutline v = toward v $ circleOutline $ norm v
@@ -147,7 +147,7 @@ instance Figure Picture where
   primitive m v = Picture $ primitive m $ map v2ToV3 v
   color col (Picture s) = Picture (color col s)
   line = primitive GL.LineStrip
-  polygon = primitive GL.Polygon
+  polygon = primitive GL.TriangleFan
   polygonOutline = primitive GL.LineLoop
   circle r = polygon $ map (^*r) $ unit_circle 33
   circleOutline r = polygonOutline $ map (^*r) $ unit_circle 33

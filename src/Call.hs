@@ -7,6 +7,7 @@ module Call ( -- * System
     module Call.Types,
     module Call.TH,
     module Call.Data.Wave,
+    module Call.Data.Font,
     -- * Reexports
     module Control.Monad,
     module Control.Applicative,
@@ -23,6 +24,7 @@ module Call ( -- * System
 import Call.TH
 import Call.Types
 import Call.Data.Wave
+import Call.Data.Font
 import Call.Sight
 import Call.System
 import Call.Util

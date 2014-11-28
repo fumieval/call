@@ -1,5 +1,4 @@
 #version 330
-#extension GL_OES_standard_derivatives : enable
 out vec4 fragColor;
 
 // Texture
@@ -23,19 +22,13 @@ uniform float textureMix;
 uniform float envAdd;
 uniform float envMul;
 
-float edgeFactor(){
-    vec3 d = fwidth(vBC);
-    vec3 a3 = smoothstep(vec3(0.0), d*1.5, vBC);
-    return min(min(a3.x, a3.y), a3.z);
-}
-
 void main(void){
-  vec3 n = mix(normal, texture(normalMap, UV).rgb * 2 - 1, normalMix);
+  // vec3 n = mix(normal, texture(normalMap, UV).rgb * 2 - 1, normalMix);
 
-  vec3 d = mix(vec4(1.0), texture(tex, UV).rgba, textureMix) * diffuse.rgb;
+  vec4 d = mix(vec4(1.0), texture(tex, UV).rgba, textureMix) * diffuse;
   vec3 s = vec3(0.0);
 
-  fragColor = vec4(ambient + d + specular * s, diffuse.a * (1.0-edgeFactor()));
+  fragColor = vec4(ambient + d.rgb + specular * s, d.a);
   
   fragColor += texture(env, envUV).rgba * envAdd;
   fragColor *= mix(vec4(1.0), texture(env, envUV).rgba, envMul);

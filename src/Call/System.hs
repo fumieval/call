@@ -100,6 +100,26 @@ setFPS f = mkSystem $ \fo -> writeIORef (targetFPS fo) f
 
 newtype System s a = System (ReaderT (Foundation s) IO a) deriving (Functor, Applicative, Monad)
 
+instance Affine a => Affine (System s a) where
+  type Vec (System s a) = Vec a
+  type Normal (System s a) = Normal a
+  translate t = fmap (translate t)
+  scale t = fmap (scale t)
+  rotateOn t = fmap (rotateOn t)
+
+instance Figure a => Figure (System s a) where
+  primitive p v = return $ primitive p v
+  color c = fmap (color c)
+  line = return . line 
+  polygon = return . polygon
+  polygonOutline = return . polygonOutline
+  circle = return . circle
+  circleOutline = return . circleOutline
+
+instance Monoid a => Monoid (System s a) where
+  mempty = return mempty
+  mappend = liftA2 mappend
+
 instance MonadObjective (System s) where
   data Instance e m (System s) = InstanceS (MVar (Object e m))
   InstanceS m `invoke` e = do
@@ -394,6 +414,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.glUniform1i locN (unsafeCoerce $ n + 1)
       m (color0, n + 1)
       GL.glUniform1i locN (unsafeCoerce n)
+    fx (EmbedIO m) c = m >>= ($ c)
     fx (Diffuse col m) (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "diffuse"
       let c = multRGBA col color0
