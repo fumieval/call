@@ -15,6 +15,7 @@ import Data.Functor.Request
 import Data.Monoid
 import Linear
 import Control.DeepSeq
+import Control.Elevator
 
 renderer :: MonadIO m => Font -> Float -> Object (Request Char (Bitmap, V2 Float, V2 Float)) m
 renderer font size = flyweight (liftIO . renderChar font size)
@@ -39,7 +40,7 @@ typewriter l req = sequential $ stateful go (V2 0 0, mempty) where
 
 putStr :: String -> ReifiedProgram (PushPull Char Picture) ()
 putStr [] = return ()
-putStr (c:cs) = push c >> putStr cs
+putStr (c:cs) = elevate (push c) >> putStr cs
 
 clear :: ReifiedProgram (PushPull Char Picture) ()
 clear = push '\3'
@@ -50,6 +51,6 @@ simple font size = liftIO $ do
   t <- new $ typewriter (size * 1.2) ((r.-) . request)
   return $ \s -> Picture $ applyVFX $ EmbedIO $ do
     t .- putStr s
-    p <- t .- pull
-    t .- push '\3'
+    p <- t .^ pull
+    t .^ push '\3'
     return $! unPicture p
