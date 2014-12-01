@@ -120,14 +120,14 @@ instance Monoid a => Monoid (System s a) where
   mempty = return mempty
   mappend = liftA2 mappend
 
-instance MonadObjective (System s) where
-  data Instance e m (System s) = InstanceS (MVar (Object e m))
-  InstanceS m `invoke` e = do
-    c <- liftIO $ takeMVar m
-    return $ do
-      (a, c') <- runObject c e
-      return (liftIO (putMVar m c') >> return a)
-  new v = liftIO $ InstanceS `fmap` newMVar v
+instance ObjectiveBase (System s) where
+  data Inst (System s) f g = InstS (MVar (Object f g))
+  invoke mr gr (InstS m) e = do
+    c <- mr $ liftIO $ takeMVar m
+    (a, c') <- gr (runObject c e)
+    mr $ liftIO $ putMVar m c'
+    return a
+  new v = liftIO $ InstS `fmap` newMVar v
 
 instance Tower (System s) where
   type Floors (System s) = IO :> Empty

@@ -38,7 +38,7 @@ import Data.Monoid
 import Control.Lens
 import Control.Monad.ST
 
-data Bitmap = Blank | Bitmap { _image :: C.Image C.PixelRGBA8, _offset :: V2 Int, _hash :: Int }
+data Bitmap = Blank | Bitmap { _image :: !(C.Image C.PixelRGBA8), _offset :: !(V2 Int), _hash :: !Int }
 
 image :: Traversal' Bitmap (C.Image C.PixelRGBA8)
 image _ Blank = pure Blank

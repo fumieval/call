@@ -91,15 +91,11 @@ freeType = unsafePerformIO $ alloca $ \p -> do
   runFreeType $ ft_Init_FreeType p
   peek p
 
--- | The resolution used to render fonts.
-resolutionDPI :: Int
-resolutionDPI = 300
-
 renderChar :: Font -> Float -> Char -> IO (Bitmap, V2 Float, V2 Float)
-renderChar (Font face _ _) siz ch = do
-  let dpi = fromIntegral resolutionDPI
+renderChar (Font face _ _) pixel ch = do
+  let dpi = 300
 
-  runFreeType $ ft_Set_Char_Size face 0 (floor $ siz * 64) dpi dpi
+  runFreeType $ ft_Set_Char_Size face 0 (floor $ pixel * 72 / fromIntegral dpi * 64) dpi dpi
   
   ix <- ft_Get_Char_Index face (fromIntegral $ fromEnum ch)
   runFreeType $ ft_Load_Glyph face ix ft_LOAD_DEFAULT
@@ -118,7 +114,7 @@ renderChar (Font face _ _) siz ch = do
 
   adv <- peek $ GS.advance slot
   b <- liftImage' $ fromColorAndOpacity (PixelRGB8 255 255 255)
-      $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
+        $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
   return (b
     , V2 (left + fromIntegral w / 2) (-top + fromIntegral h / 2)
     , V2 (fromIntegral (V.x adv) / 64) 0)

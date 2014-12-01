@@ -20,7 +20,7 @@ main = runSystemDefault $ do
   setTitle "Hello, world!"
   src <- readWAVE "examples/hello-world.wav"
   deck <- new $ variable $ Call.Util.Deck.empty & source .~ sampleSource src
-  text <- Text.simple defaultFont 12
+  text <- Text.simple defaultFont 32
 
   linkAudio $ ((deck .-) .) . playback
   linkPicture $ \_ -> do
@@ -30,7 +30,7 @@ main = runSystemDefault $ do
       [color black $ polygonOutline [V2 0 0, V2 40 0, V2 40 (-240), V2 0 (-240)]
       ,color red $ mconcat [polygonOutline [V2 0 0, V2 16 0, V2 16 (-a * 240), V2 0 (-a * 240)]
       ,polygonOutline [V2 24 0, V2 40 0, V2 40 (-b * 240), V2 24 (-b * 240)]]
-      ,color black $ text "hogehoge0123456789"
+      ,translate (V2 40 40) $ color black $ text "Hello, world"
       ]
   linkKeyboard $ \case
     Down KeySpace -> deck .- pos .= 0

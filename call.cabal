@@ -68,7 +68,7 @@ library
     lens >=4.0 && <5,
     linear >=1.13 && <2,
     mtl >=2.0 && <2.7,
-    objective >= 0.5.2 && <0.7,
+    objective >= 0.6.1 && <0.7,
     OpenGL == 2.9.*,
     OpenGLRaw >=1.4 && <1.7,
     random ==1.*,
@@ -78,7 +78,8 @@ library
     transformers >=0.3 && <0.5,
     vector >=0.9 && <0.13,
     WAVE >=0.1 && <0.2,
-    minioperational >= 0.4.7 && <0.6
+    minioperational >= 0.4.7 && <0.6,
+    deepseq
   hs-source-dirs:      src
   default-language:    Haskell2010
 

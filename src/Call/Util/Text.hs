@@ -1,7 +1,7 @@
-{-# LANGUAGE ConstraintKinds, FlexibleContexts #-}
+{-# LANGUAGE ConstraintKinds, FlexibleContexts, BangPatterns #-}
 module Call.Util.Text where
 import Prelude hiding (putStr)
-import Call.Data.Bitmap (Bitmap)
+import Call.Data.Bitmap (Bitmap(..))
 import Call.Data.Font
 import Call.Sight
 import Control.Elevator
@@ -15,6 +15,7 @@ import Data.Functor.PushPull
 import Data.Functor.Request
 import Data.Monoid
 import Linear
+import Control.DeepSeq
 
 renderer :: MonadIO m => Font -> Float -> Object (Request Char (Bitmap, V2 Float, V2 Float)) m
 renderer font size = flyweight (liftIO . renderChar font size)
@@ -31,8 +32,9 @@ typewriter l req = sequential $ stateful go (V2 0 0, mempty) where
     return cont
   go (Push ch cont) = do
     (pos, pic) <- get
-    (bmp, ofs, adv) <- lift $ req ch
-    put (pos + adv, translate (pos + ofs) (bitmap bmp) <> pic)
+    (!bmp@(Bitmap img _ _), !ofs, !adv) <- lift $ req ch
+    return $! rnf img
+    put (pos + adv, pic <> translate (pos + ofs) (bitmap bmp))
     return cont
   go (Pull cont) = uses _2 cont
 
@@ -51,4 +53,4 @@ simple font size = liftIO $ do
     t .- putStr s
     p <- t .- pull
     t .- push '\3'
-    return (unPicture p)
+    return $! unPicture p

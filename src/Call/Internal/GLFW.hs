@@ -55,6 +55,8 @@ installTexture (Image w h v) = do
   [tex] <- GL.genObjectNames 1
   GL.textureBinding GL.Texture2D GL.$= Just tex
   let siz = GL.TextureSize2D (gsizei w) (gsizei h)
+  GL.glTexParameteri GL.gl_TEXTURE_2D GL.gl_TEXTURE_BASE_LEVEL 0
+  GL.glTexParameteri GL.gl_TEXTURE_2D GL.gl_TEXTURE_MAX_LEVEL 0
   V.unsafeWith v
     $ GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGBA8 siz 0
     . GL.PixelData GL.ABGR GL.UnsignedInt8888
@@ -189,7 +191,7 @@ initializeGL = do
   GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "envMul"
   GL.glUniform1f loc 0
 
-
+  GL.glPixelStorei GL.gl_UNPACK_ALIGNMENT 4
   return shaderProg
 
 endGLFW :: System -> IO ()
