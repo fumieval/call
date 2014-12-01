@@ -4,7 +4,6 @@ import Prelude hiding (putStr)
 import Call.Data.Bitmap (Bitmap(..))
 import Call.Data.Font
 import Call.Sight
-import Control.Elevator
 import Control.Lens
 import Control.Monad.Objective
 import Control.Monad.Operational.Mini
@@ -38,11 +37,11 @@ typewriter l req = sequential $ stateful go (V2 0 0, mempty) where
     return cont
   go (Pull cont) = uses _2 cont
 
-putStr :: (Monad m, Elevate (PushPull Char a) m) => String -> m ()
+putStr :: String -> ReifiedProgram (PushPull Char Picture) ()
 putStr [] = return ()
 putStr (c:cs) = push c >> putStr cs
 
-clear :: (Elevate (PushPull Char a) m) => m ()
+clear :: ReifiedProgram (PushPull Char Picture) ()
 clear = push '\3'
 
 simple :: MonadIO m => Font -> Float -> m (String -> Picture)
