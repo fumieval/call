@@ -38,11 +38,11 @@ typewriter l req = sequential $ stateful go (V2 0 0, mempty) where
     return cont
   go (Pull cont) = uses _2 cont
 
-putStr :: String -> ReifiedProgram (PushPull Char Picture) ()
+putStr :: (Monad m, Elevate (PushPull Char a) m) => String -> m ()
 putStr [] = return ()
-putStr (c:cs) = elevate (push c) >> putStr cs
+putStr (c:cs) = push c >> putStr cs
 
-clear :: ReifiedProgram (PushPull Char Picture) ()
+clear :: Elevate (PushPull Char a) m => m ()
 clear = push '\3'
 
 simple :: MonadIO m => Font -> Float -> m (String -> Picture)
@@ -51,6 +51,6 @@ simple font size = liftIO $ do
   t <- new $ typewriter (size * 1.2) ((r.-) . request)
   return $ \s -> Picture $ applyVFX $ EmbedIO $ do
     t .- putStr s
-    p <- t .^ pull
-    t .^ push '\3'
+    p <- t .- pull
+    t .- push '\3'
     return $! unPicture p
