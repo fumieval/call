@@ -4,6 +4,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ConstraintKinds #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Call.Util.Deck
@@ -17,12 +18,14 @@
 -- The deck for a single stream
 --
 -----------------------------------------------------------------------------
-module Call.Util.Deck (Deck(..), empty, source, pos, playing, playback) where
+module Call.Util.Deck (Deck(..), empty, source, pos, playing, playback, playbackOf) where
 import Control.Lens
-import Control.Monad.State.Class
+import Control.Monad.State.Strict
 import Call.Data.Wave
 import Call.Types
 import qualified Data.Vector.Storable as V
+import Control.Monad.Objective
+import Control.Elevator
 
 data Deck = Deck
   { _src :: Source Stereo
@@ -51,3 +54,6 @@ playback dt n = do
       pos += dt
       return $ V.fromList $ take n $ map s [t0,t0 + dt / fromIntegral n..]
     else return $ V.replicate n 0
+
+playbackOf :: (MonadObjective b m, Elevate n m) => Inst b (State Deck) n -> Time -> Int -> m (V.Vector Stereo)
+playbackOf i = \dt n -> i .- playback dt n
