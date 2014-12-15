@@ -55,8 +55,6 @@ installTexture (Image w h v) = do
   [tex] <- GL.genObjectNames 1
   GL.textureBinding GL.Texture2D GL.$= Just tex
   let siz = GL.TextureSize2D (gsizei w) (gsizei h)
-  GL.glTexParameteri GL.gl_TEXTURE_2D GL.gl_TEXTURE_BASE_LEVEL 0
-  GL.glTexParameteri GL.gl_TEXTURE_2D GL.gl_TEXTURE_MAX_LEVEL 0
   V.unsafeWith v
     $ GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGBA8 siz 0
     . GL.PixelData GL.ABGR GL.UnsignedInt8888
@@ -99,7 +97,7 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   GLFW.swapInterval 1
   -- GL.clearColor $= GL.Color4 1 1 1 1
-  
+
   (fw, fh) <- GLFW.getFramebufferSize win
 
   rbox <- newIORef $ bbox & size zero .~ fmap fromIntegral (V2 fw fh)
@@ -121,7 +119,7 @@ initializeGL = do
   let vertexAttribute = GL.AttribLocation 0
   let uvAttribute = GL.AttribLocation 1
   let normalAttribute = GL.AttribLocation 2
-  
+
   cubeVao <- GL.genObjectName
   cubeVbo <- GL.genObjectName
 
@@ -159,7 +157,7 @@ initializeGL = do
   GL.attribLocation shaderProg "in_Normal" $= normalAttribute
   GL.linkProgram shaderProg
   GL.currentProgram $= Just shaderProg
-  
+
   -- GL.blend $= GL.Disabled
   GL.depthMask $= GL.Enabled
   GL.depthFunc $= Just GL.Lequal
@@ -167,7 +165,7 @@ initializeGL = do
   {-
   GL.depthMask $= GL.Disabled
   GL.depthFunc $= Nothing
-  
+
   GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
   -}
   -- GL.cullFace $= GL.Back
@@ -176,7 +174,7 @@ initializeGL = do
   linked <- GL.get (GL.linkStatus shaderProg)
   unless linked $ do
     GL.get (GL.programInfoLog shaderProg) >>= putStrLn
-  
+
   GL.lineSmooth $= GL.Enabled
   GL.textureFunction $= GL.Combine
   GL.clearColor $= GL.Color4 1 1 1 1
