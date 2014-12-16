@@ -51,4 +51,4 @@ play :: MonadState Sampler m => Sample Stereo -> m ()
 play s = modify $ \(Sampler xs) -> Sampler $ (s, 0) : xs
 
 playbackOf :: (MonadObjective b m, Elevate n m) => Inst b (State Sampler) n -> Time -> Int -> m (V.Vector Stereo)
-playbackOf i = \dt n -> i .- playback dt n
+playbackOf i = \dt n -> i .^ playback dt n

@@ -40,6 +40,6 @@ readWAVE path = liftIO $ do
     fr [a, b] = V2 (double2Float $ sampleToDouble a) (double2Float $ sampleToDouble b)
     fr _ = zero
 
-data Sample a = Sample { sampleLength :: Time ,sampleSource :: Source a} 
+data Sample a = Sample { sampleLength :: Time ,sampleSource :: Source a}
 
 -- TODO: Lazy processing

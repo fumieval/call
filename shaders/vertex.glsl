@@ -1,4 +1,4 @@
-#version 330 core
+#version 330
 uniform mat4 projection;
 uniform mat4 matrices[13];
 uniform int level;

@@ -1,4 +1,4 @@
-#version 330 core
+#version 330
 out vec4 fragColor;
 
 // Texture
@@ -23,7 +23,7 @@ void main(void){
   vec4 d = mix(vec4(1.0), texture(tex, UV).rgba, textureMix) * diffuse;
 
   fragColor = vec4(d.rgb, d.a);
-  
+
   fragColor += texture(env, envUV).rgba * envAdd;
   fragColor *= mix(vec4(1.0), texture(env, envUV).rgba, envMul);
 
