@@ -178,16 +178,16 @@ initializeGL = do
   GL.lineSmooth $= GL.Enabled
   GL.textureFunction $= GL.Combine
   GL.clearColor $= GL.Color4 1 1 1 1
-  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "useEnv"
-  GL.glUniform1i loc 0
-  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "tex"
-  GL.glUniform1i loc 0
-  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "env"
-  GL.glUniform1i loc 1
-  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "envAdd"
-  GL.glUniform1f loc 0
-  GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "envMul"
-  GL.glUniform1f loc 0
+  GL.UniformLocation loc0 <- GL.get $ GL.uniformLocation shaderProg "useEnv"
+  GL.glUniform1i loc0 0
+  GL.UniformLocation loc1 <- GL.get $ GL.uniformLocation shaderProg "tex"
+  GL.glUniform1i loc1 0
+  GL.UniformLocation loc2 <- GL.get $ GL.uniformLocation shaderProg "env"
+  GL.glUniform1i loc2 1
+  GL.UniformLocation loc3 <- GL.get $ GL.uniformLocation shaderProg "envAdd"
+  GL.glUniform1f loc3 0
+  GL.UniformLocation loc4 <- GL.get $ GL.uniformLocation shaderProg "envMul"
+  GL.glUniform1f loc4 0
 
   GL.glPixelStorei GL.gl_UNPACK_ALIGNMENT 4
   return shaderProg

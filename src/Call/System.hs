@@ -77,7 +77,6 @@ import Control.Monad.Objective
 import Control.Monad.Reader
 import Control.Object
 import Data.BoundingBox (Box(..))
-import Data.Color
 import Data.OpenUnion1.Clean
 import Data.IORef
 import Data.Maybe
