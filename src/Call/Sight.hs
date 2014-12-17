@@ -22,6 +22,7 @@
 module Call.Sight (Affine(..)
     , Figure(..)
     , Picture(..)
+    , opacity
     , bitmap
     , toward
     , Scene(..)
@@ -54,12 +55,15 @@ class Affine a where
 
 class Affine a => Figure a where
   primitive :: GL.PrimitiveMode -> [Vec a] -> a
-  color :: RGBA -> a -> a
+  color :: RGBA Float -> a -> a
   line :: [Vec a] -> a
   polygon :: [Vec a] -> a
   polygonOutline :: [Vec a] -> a
   circle :: Normal a -> a
   circleOutline :: Normal a -> a
+
+opacity :: Figure a => Float -> a -> a
+opacity p = color (V4 1 1 1 p)
 
 bitmap :: B.Bitmap -> Picture
 bitmap bmp = Picture $ Scene
@@ -86,7 +90,7 @@ newtype Scene = Scene { unScene :: forall r.
 
 data VFX r = SphericalAdd Bitmap r
   | SphericalMultiply Bitmap r
-  | Diffuse RGBA r
+  | Diffuse (V4 Float) r
 --  | Specular (V3 Float) r
 --  | Ambient (V3 Float) r
 --  | NormalMap Bitmap r
@@ -153,7 +157,7 @@ instance Figure Picture where
   circleOutline r = polygonOutline $ map (^*r) $ unit_circle 33
 
 newtype Sight = Sight { unSight
-  :: forall r. 
+  :: forall r.
   X.Box V2 Float
   -> r
   -> (r -> r -> r)

@@ -19,7 +19,6 @@ import Control.Monad.ST
 import Control.Monad.State.Strict
 import Call.Types
 import Call.Data.Wave
-import Control.Monad
 import Control.Monad.Objective
 import Control.Elevator
 

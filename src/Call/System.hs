@@ -110,7 +110,7 @@ instance Affine a => Affine (System s a) where
 instance Figure a => Figure (System s a) where
   primitive p v = return $ primitive p v
   color c = fmap (color c)
-  line = return . line 
+  line = return . line
   polygon = return . polygon
   polygonOutline = return . polygonOutline
   circle = return . circle
@@ -214,14 +214,14 @@ runSystem mode box m = do
   cv0 <- GLFW.getWindowContextVersionMajor    win
   cv1 <- GLFW.getWindowContextVersionMinor    win
   cv2 <- GLFW.getWindowContextVersionRevision win
-  putStrLn $ show cv0 ++ "." ++ show cv1 ++ "." ++ show cv2 
+  putStrLn $ show cv0 ++ "." ++ show cv1 ++ "." ++ show cv2
   print =<< GLFW.getWindowContextRobustness win
   putStr "Forward compat: "
   print =<< GLFW.getWindowOpenGLForwardCompat win
   putStr "Debug context: "
   print =<< GLFW.getWindowOpenGLDebugContext win
   print =<< GLFW.getWindowOpenGLProfile win
-  
+
   ref <- newEmptyMVar
   _ <- flip forkFinally (either throwIO (putMVar ref)) $ unSystem f m
   PA.with 44100 512 (audioProcess f) $ liftIO $ do
@@ -276,7 +276,7 @@ gamepadButtons :: Gamepad -> System s [Bool]
 gamepadButtons (Gamepad i _) = mkSystem $ const
   $ maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
 
-clearColor :: RGBA -> System s ()
+clearColor :: V4 Float -> System s ()
 clearColor col = liftIO $ GL.clearColor $= unsafeCoerce col
 
 setBoundingBox :: Box V2 Float -> System s ()
@@ -292,7 +292,7 @@ takeScreenshot = mkSystem $ \fo -> G.screenshot (theSystem fo) >>= liftImage'
 
 setTitle :: String -> System s ()
 setTitle str = mkSystem $ \fo -> GLFW.setWindowTitle (G.theWindow $ theSystem fo) str
-    
+
 instance MonadIO (System s) where
   liftIO m = mkSystem $ const m
   {-# INLINE liftIO #-}
@@ -333,7 +333,7 @@ runGraphic fo t0 = do
   pic <- unSystem fo $ m (1/fps) -- is it appropriate?
   drawSight fo pic
   b <- G.endFrame (theSystem fo)
-  
+
   Just t' <- GLFW.getTime
   threadDelay $ floor $ (t1 - realToFrac t') * 1000 * 1000
 
@@ -390,7 +390,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
   with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 1 $ castPtr ptr
   GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "textureMix"
-  s (pure $ return ()) (liftA2 (>>)) (prim locT) fx trans (RGBA 1 1 1 1, 0)
+  s (pure $ return ()) (liftA2 (>>)) (prim locT) fx trans (V4 1 1 1 1, 0)
   where
     shaderProg = G.theProgram $ theSystem fo
     prim locT Blank mode vs _ = do
@@ -409,7 +409,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs
     trans f m (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "matrices"
-      GL.UniformLocation locN <- GL.get $ GL.uniformLocation shaderProg "level" 
+      GL.UniformLocation locN <- GL.get $ GL.uniformLocation shaderProg "level"
       with f $ \ptr -> GL.glUniformMatrix4fv (loc+n) 1 1 (castPtr ptr)
       GL.glUniform1i locN (unsafeCoerce $ n + 1)
       m (color0, n + 1)
@@ -417,7 +417,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
     fx (EmbedIO m) c = m >>= ($ c)
     fx (Diffuse col m) (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "diffuse"
-      let c = multRGBA col color0
+      let c = col * color0
       with c $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
       m (c, n)
       with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)

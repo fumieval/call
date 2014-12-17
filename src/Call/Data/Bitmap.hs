@@ -98,3 +98,4 @@ readFile path = liftIO $ Bitmap <$> C.readImageRGBA8 path <*> pure zero <*> rand
 writeFile :: MonadIO m => FilePath -> Bitmap -> m ()
 writeFile path (Bitmap p _ _) = liftIO $ C.writePng path p
 writeFile _ Blank = fail "Blank bitmap"
+

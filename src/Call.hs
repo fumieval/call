@@ -1,8 +1,8 @@
 {-# LANGUAGE Rank2Types #-}
 module Call ( -- * System
     runSystemDefault,
+    readBitmap,
     module Call.Sight,
-    module Call.Util,
     module Call.System,
     module Call.Types,
     module Call.TH,
@@ -27,7 +27,6 @@ import Call.Data.Wave
 import Call.Data.Font
 import Call.Sight
 import Call.System
-import Call.Util
 import Control.Monad.IO.Class
 import Control.Monad
 import Control.Applicative
@@ -39,6 +38,10 @@ import Data.Color.Names
 import Data.Monoid
 import Linear
 import Data.BoundingBox
+import qualified Call.Data.Bitmap as Bitmap
 
 runSystemDefault :: (forall s. System s a) -> IO (Maybe a)
 runSystemDefault = runSystem Windowed (Box (V2 0 0) (V2 640 480))
+
+readBitmap :: MonadIO m => FilePath -> m Bitmap.Bitmap
+readBitmap = Bitmap.readFile
