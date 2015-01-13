@@ -69,7 +69,7 @@ with :: MonadIO m => Float -> Int -> (Int -> IO (V.Vector (V2 Float))) -> m a ->
 with rate buf f m = do
   w c'Pa_Initialize
   cb <- liftIO $ mk'PaStreamCallback $ callback f
-  
+
   ps <- liftIO malloc
   w $ c'Pa_OpenDefaultStream ps
       0

@@ -37,4 +37,4 @@ main = runSystemDefault $ do
     _ -> return ()
   deck .- playing .= True
   stand
- 
+

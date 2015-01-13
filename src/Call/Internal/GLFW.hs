@@ -189,7 +189,6 @@ initializeGL = do
   GL.UniformLocation loc4 <- GL.get $ GL.uniformLocation shaderProg "envMul"
   GL.glUniform1f loc4 0
 
-  GL.glPixelStorei GL.gl_UNPACK_ALIGNMENT 4
   return shaderProg
 
 endGLFW :: System -> IO ()
