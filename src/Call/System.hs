@@ -77,7 +77,6 @@ import Control.Monad.Objective
 import Control.Monad.Reader
 import Control.Object
 import Data.BoundingBox (Box(..))
-import Data.OpenUnion1.Clean
 import Data.IORef
 import Data.Maybe
 import Data.Monoid
@@ -93,6 +92,7 @@ import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
+import Data.Extensible
 
 setFPS :: Float -> System s ()
 setFPS f = mkSystem $ \fo -> writeIORef (targetFPS fo) f
@@ -129,8 +129,8 @@ instance ObjectiveBase (System s) where
   new v = liftIO $ InstS `fmap` newMVar v
 
 instance Tower (System s) where
-  type Floors (System s) = IO :> Empty
-  toLoft = liftIO ||> exhaust
+  type Floors (System s) = Floors IO
+  stairs = hmap (\(Gondola f) -> Gondola (liftIO . f)) stairs
 
 unSystem :: Foundation s -> System s a -> IO a
 unSystem f m = unsafeCoerce m f

@@ -31,7 +31,7 @@ import Control.Monad.IO.Class
 import Control.Monad
 import Control.Applicative
 import Control.Bool
-import Control.Object
+import Control.Object hiding (invoke)
 import Control.Monad.Objective.Class
 import Data.Color
 import Data.Color.Names
