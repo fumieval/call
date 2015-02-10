@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns, DeriveDataTypeable #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Call.Internal.GLFW
@@ -15,8 +15,8 @@ import Control.Bool
 import Control.Applicative
 import Control.Lens
 import Data.IORef
-import Call.Types
 import Data.BoundingBox
+import Data.Typeable
 import Control.Monad
 import Graphics.Rendering.OpenGL.GL.StateVar
 import Linear
@@ -33,12 +33,15 @@ import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.C (CFloat)
 import Foreign (nullPtr, plusPtr, sizeOf)
+import Data.Graphics
 import Paths_call
 data System = System
   { refRegion :: IORef (Box V2 Float)
   , theWindow :: GLFW.Window
   , theProgram :: GL.Program
   }
+
+data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read, Typeable)
 
 type Texture = (GL.TextureObject, Double, Double)
 

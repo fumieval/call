@@ -65,9 +65,10 @@ module Call.System (
   , takeScreenshot
   ) where
 
-import Call.Data.Bitmap
-import Call.Sight
-import Call.Types
+import Data.Graphics as U
+import Data.Graphics.Bitmap (liftImage')
+import Data.Audio
+import Data.Input.Event
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
@@ -184,7 +185,7 @@ data Foundation s = Foundation
   , theGamepadButtons :: IORef (IM.IntMap (String, IM.IntMap Bool))
   }
 
-runSystem :: WindowMode -> Box V2 Float -> (forall s. System s a) -> IO (Maybe a)
+runSystem :: G.WindowMode -> Box V2 Float -> (forall s. System s a) -> IO (Maybe a)
 runSystem mode box m = do
   sys <- G.beginGLFW mode box
   f <- Foundation
@@ -381,6 +382,12 @@ fetchTexture fo bmp h = do
       writeIORef (textures fo) $ IM.insert h t st
       return t
 
+convPrimitiveMode :: U.PrimitiveMode -> GL.PrimitiveMode
+convPrimitiveMode U.LineStrip = GL.LineStrip
+convPrimitiveMode U.TriangleFan = GL.TriangleFan
+convPrimitiveMode U.TriangleStrip = GL.TriangleStrip
+convPrimitiveMode U.LineLoop = GL.LineLoop
+
 drawScene :: Foundation s -> Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
 drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
   GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
@@ -396,7 +403,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.glUniform1f locT 0
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-      GL.drawArrays mode 0 $ fromIntegral $ V.length vs
+      GL.drawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
     prim locT (Bitmap bmp _ h) mode vs _ = do
       GL.glUniform1f locT 1
       (tex, _, _) <- fetchTexture fo bmp h
@@ -405,7 +412,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-      GL.drawArrays mode 0 $ fromIntegral $ V.length vs
+      GL.drawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
     trans f m (color0, n) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "matrices"
       GL.UniformLocation locN <- GL.get $ GL.uniformLocation shaderProg "level"

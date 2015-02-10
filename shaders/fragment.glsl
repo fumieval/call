@@ -18,7 +18,7 @@ uniform float envAdd;
 uniform float envMul;
 
 void main(void){
-  // vec3 n = mix(normal, texture(normalMap, UV).rgb * 2 - 1, normalMix);
+  vec3 n = mix(normal, texture(normalMap, UV).rgb * 2 - 1, normalMix);
 
   vec4 d = mix(vec4(1.0), texture(tex, UV).rgba, textureMix) * diffuse;
 
