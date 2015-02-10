@@ -1,17 +1,15 @@
 {-# LANGUAGE ConstraintKinds, FlexibleContexts, BangPatterns #-}
-module Call.Util.Text where
+module Call.Util.Text (renderer, typewriter, putStr, clear, simple) where
 import Prelude hiding (putStr)
 import Call.Data.Bitmap (Bitmap(..))
 import Call.Data.Font
 import Call.Sight
-import Control.Lens
+import Control.Lens hiding (simple)
 import Control.Monad.Objective
 import Control.Monad.Operational.Mini
 import Control.Monad.State.Class
 import Control.Monad.Trans
 import Control.Object
-import Data.Functor.PushPull
-import Data.Functor.Request
 import Data.Monoid
 import Linear
 import Control.DeepSeq
@@ -44,10 +42,13 @@ putStr (c:cs) = Push c () :>>= const (putStr cs)
 clear :: ReifiedProgram (PushPull Char Picture) ()
 clear = Push '\3' () :>>= return
 
+new' :: ObjectiveBase b => Object f b -> b (Inst b f b)
+new' = new
+
 simple :: MonadIO m => Font -> Float -> m (String -> Picture)
 simple font size = liftIO $ do
-  r <- new $ renderer font size
-  t <- new $ typewriter (size * 1.2) ((r.-) . request)
+  r <- new' $ renderer font size
+  t <- new' $ typewriter (size * 1.2) ((r.-) . request)
   return $ \s -> Picture $ applyVFX $ EmbedIO $ do
     t .- putStr s
     p <- t .- (Pull id :>>= return)

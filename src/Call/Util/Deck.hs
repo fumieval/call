@@ -56,4 +56,4 @@ playback dt n = do
     else return $ V.replicate n 0
 
 playbackOf :: (MonadObjective b m, Elevate n m) => Inst b (State Deck) n -> Time -> Int -> m (V.Vector Stereo)
-playbackOf i = \dt n -> i .^ playback dt n
+playbackOf i = \dt n -> i .- playback dt n
