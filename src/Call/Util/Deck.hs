@@ -24,8 +24,7 @@ import Control.Monad.State.Strict
 import Call.Data.Wave
 import Call.Types
 import qualified Data.Vector.Storable as V
-import Control.Monad.Objective
-import Control.Elevator
+import Control.Object
 
 data Deck = Deck
   { _src :: Source Stereo
@@ -55,5 +54,5 @@ playback dt n = do
       return $ V.fromList $ take n $ map s [t0,t0 + dt / fromIntegral n..]
     else return $ V.replicate n 0
 
-playbackOf :: (MonadObjective b m, Elevate n m) => Inst b (State Deck) n -> Time -> Int -> m (V.Vector Stereo)
+playbackOf :: (MonadIO m, MonadState Deck b) => Instance b m -> Time -> Int -> m (V.Vector Stereo)
 playbackOf i = \dt n -> i .- playback dt n

@@ -17,7 +17,6 @@ module Call ( -- * System
     module Data.Color.Names,
     module Linear,
     module Control.Object,
-    module Control.Monad.Objective.Class,
     module Control.Monad.IO.Class
 ) where
 
@@ -32,7 +31,6 @@ import Control.Monad
 import Control.Applicative
 import Control.Bool
 import Control.Object hiding (invoke)
-import Control.Monad.Objective.Class
 import Data.Color
 import Data.Color.Names
 import Data.Monoid
