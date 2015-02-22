@@ -158,17 +158,10 @@ initializeGL = do
   GL.linkProgram shaderProg
   GL.currentProgram $= Just shaderProg
 
-  -- GL.blend $= GL.Disabled
   GL.depthMask $= GL.Enabled
   GL.depthFunc $= Just GL.Lequal
   GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
-  {-
-  GL.depthMask $= GL.Disabled
-  GL.depthFunc $= Nothing
 
-  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
-  -}
-  -- GL.cullFace $= GL.Back
   GL.blend      $= GL.Enabled
   GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
   linked <- GL.get (GL.linkStatus shaderProg)

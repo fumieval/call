@@ -73,7 +73,6 @@ import Control.Concurrent
 import Control.Exception
 import Control.Lens
 import Control.Monad.Reader
-import Control.Object
 import Data.BoundingBox (Box(..))
 import Data.IORef
 import Data.Maybe
@@ -90,7 +89,6 @@ import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
-import Data.Extensible
 
 setFPS :: Float -> System s ()
 setFPS f = mkSystem $ \fo -> writeIORef (targetFPS fo) f
