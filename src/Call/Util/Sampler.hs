@@ -19,8 +19,7 @@ import Control.Monad.ST
 import Control.Monad.State.Strict
 import Call.Types
 import Call.Data.Wave
-import Control.Monad.Objective
-import Control.Elevator
+import Control.Object
 
 data Sampler = Sampler [(Sample Stereo, Time)]
 
@@ -49,5 +48,5 @@ playback dt n = do
 play :: MonadState Sampler m => Sample Stereo -> m ()
 play s = modify $ \(Sampler xs) -> Sampler $ (s, 0) : xs
 
-playbackOf :: (MonadObjective b m, Elevate n m) => Inst b (State Sampler) n -> Time -> Int -> m (V.Vector Stereo)
+playbackOf :: (MonadIO m, MonadState Sampler b) => Instance b m -> Time -> Int -> m (V.Vector Stereo)
 playbackOf i = \dt n -> i .- playback dt n

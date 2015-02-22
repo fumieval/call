@@ -71,9 +71,7 @@ import Call.Types
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
-import Control.Elevator
 import Control.Lens
-import Control.Monad.Objective
 import Control.Monad.Reader
 import Control.Object
 import Data.BoundingBox (Box(..))
@@ -118,19 +116,6 @@ instance Figure a => Figure (System s a) where
 instance Monoid a => Monoid (System s a) where
   mempty = return mempty
   mappend = liftA2 mappend
-
-instance ObjectiveBase (System s) where
-  data Inst (System s) f g = InstS (MVar (Object f g))
-  invoke mr gr (InstS m) e = do
-    c <- mr $ liftIO $ takeMVar m
-    (a, c') <- gr (runObject c e)
-    mr $ liftIO $ putMVar m c'
-    return a
-  new v = liftIO $ InstS `fmap` newMVar v
-
-instance Tower (System s) where
-  type Floors (System s) = Floors IO
-  stairs = hmap (\(Gondola f) -> Gondola (liftIO . f)) stairs
 
 unSystem :: Foundation s -> System s a -> IO a
 unSystem f m = unsafeCoerce m f
