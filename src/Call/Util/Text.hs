@@ -1,5 +1,5 @@
 {-# LANGUAGE ConstraintKinds, FlexibleContexts, BangPatterns, DeriveFunctor #-}
-module Call.Util.Text (renderer, typewriter, putStr, clear, simple) where
+module Call.Util.Text (renderer, Typewriting(..), typewriter, putStr, clear, simple) where
 import Prelude hiding (putStr)
 import Call.Data.Bitmap (Bitmap(..))
 import Call.Data.Font

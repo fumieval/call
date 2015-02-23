@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns, DeriveFunctor #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Call.Data.Wave
@@ -23,8 +23,18 @@ import Call.Types
 import Control.Monad.IO.Class
 import qualified Data.Vector.Unboxed as V
 import GHC.Float
+import Data.Monoid
+import Control.Applicative
 
-newtype Source a = Source (Time -> a)
+newtype Source a = Source (Time -> a) deriving Functor
+
+instance Applicative Source where
+  pure a = Source (const a)
+  Source f <*> Source g = Source (f <*> g)
+
+instance Num a => Monoid (Source a) where
+  mempty = pure 0
+  mappend = liftA2 (+)
 
 readWAVE :: MonadIO m => FilePath -> m (Sample Stereo)
 readWAVE path = liftIO $ do
