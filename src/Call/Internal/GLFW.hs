@@ -22,6 +22,7 @@ import Graphics.Rendering.OpenGL.GL.StateVar
 import Linear
 import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.Rendering.OpenGL.GL as GL
+import qualified Graphics.Rendering.OpenGL.GLU.Errors as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
 import qualified Data.Vector.Storable as V
@@ -32,7 +33,7 @@ import qualified GHC.IO.Encoding as Encoding
 import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.C (CFloat)
-import Foreign (nullPtr, plusPtr, sizeOf)
+import Foreign
 import Paths_call
 data System = System
   { refRegion :: IORef (Box V2 Float)
@@ -57,7 +58,7 @@ installTexture (Image w h v) = do
   let siz = GL.TextureSize2D (gsizei w) (gsizei h)
   V.unsafeWith v
     $ GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGBA8 siz 0
-    . GL.PixelData GL.RGBA GL.UnsignedInt8888
+    . GL.PixelData GL.RGBA GL.UnsignedByte
   return (tex, fromIntegral w / 2, fromIntegral h / 2)
 
 releaseTexture :: Texture -> IO ()
@@ -69,6 +70,7 @@ beginFrame _ = do
 
 endFrame :: System -> IO Bool
 endFrame sys = do
+  -- mapM_ print =<< GL.get GL.errors
   GLFW.swapBuffers $ theWindow sys
   GLFW.pollEvents
   GLFW.windowShouldClose (theWindow sys)
