@@ -408,8 +408,8 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       withLoc "envAdd" $ \loc -> GL.glUniform1f loc 1
       (tex, _, _) <- fetchTexture fo bmp h
       GL.activeTexture $= GL.TextureUnit 1
-      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
+      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       m c
       withLoc "useEnv" $ \loc -> GL.glUniform1i loc 0
       withLoc "envAdd" $ \loc -> GL.glUniform1f loc 0
@@ -420,8 +420,8 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       (tex, _, _) <- fetchTexture fo bmp h
 
       GL.activeTexture $= GL.TextureUnit 1
-      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       GL.textureBinding GL.Texture2D $= Just tex
+      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
       m c
       withLoc "useEnv" $ \loc -> GL.glUniform1i loc 0
       withLoc "envMul" $ \loc -> GL.glUniform1f loc 0
