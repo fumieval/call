@@ -57,7 +57,7 @@ installTexture (Image w h v) = do
   let siz = GL.TextureSize2D (gsizei w) (gsizei h)
   V.unsafeWith v
     $ GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGBA8 siz 0
-    . GL.PixelData GL.ABGR GL.UnsignedInt8888
+    . GL.PixelData GL.RGBA GL.UnsignedInt8888
   return (tex, fromIntegral w / 2, fromIntegral h / 2)
 
 releaseTexture :: Texture -> IO ()
@@ -86,7 +86,7 @@ beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
     _ -> return Nothing
 
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
-  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 3
+  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 2
   GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
   GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
 
