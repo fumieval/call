@@ -15,8 +15,9 @@ import Control.Bool
 import Control.Applicative
 import Control.Lens
 import Data.IORef
-import Call.Types
 import Data.BoundingBox
+import Data.Graphics.Class
+import Data.Graphics.Vertex
 import Control.Monad
 import Graphics.Rendering.OpenGL.GL.StateVar
 import Linear
@@ -75,24 +76,22 @@ endFrame sys = do
   GLFW.pollEvents
   GLFW.windowShouldClose (theWindow sys)
 
-beginGLFW :: WindowMode -> Box V2 Float -> IO System
-beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
+beginGLFW :: Bool -> Bool -> Box V2 Float -> IO System
+beginGLFW full resiz bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   Encoding.setForeignEncoding Encoding.utf8
   let title = "call"
       ww = floor $ x1 - x0
       wh = floor $ y1 - y0
   () <- unlessM GLFW.init (fail "Failed to initialize")
 
-  mon <- case mode of
-    FullScreen -> GLFW.getPrimaryMonitor
-    _ -> return Nothing
+  mon <- if full then GLFW.getPrimaryMonitor else return Nothing
 
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 2
   GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
   GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
 
-  GLFW.windowHint $ GLFW.WindowHint'Resizable $ mode == Resizable
+  GLFW.windowHint $ GLFW.WindowHint'Resizable resiz
   win <- GLFW.createWindow ww wh title mon Nothing >>= maybe (fail "Failed to create a window") return
   GLFW.makeContextCurrent (Just win)
   prog <- initializeGL

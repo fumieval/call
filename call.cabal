@@ -31,23 +31,14 @@ source-repository head
 library
   exposed-modules:
     Call
-    Call.Types
-    Call.TH
-    Call.System
-    Call.Sight
     Call.Internal.GLFW
     Call.Internal.PortAudio
-    Call.Data.Wave
-    Call.Data.Font
-    Call.Data.Bitmap
-    Call.Util.Deck
-    Call.Util.Sampler
-    Call.Util.Text
   other-modules:
     Paths_call
   ghc-options: -Wall -fexcess-precision -O2 -optc-ffast-math
   other-extensions:    Rank2Types, DeriveFunctor, DeriveFoldable, DeriveTraversable, DeriveDataTypeable, TemplateHaskell, CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, TypeSynonymInstances, ScopedTypeVariables, FlexibleInstances, FlexibleContexts, KindSignatures, TypeFamilies, BangPatterns, ViewPatterns, LambdaCase, DataKinds, GADTs
   build-depends:
+    audiovisual,
     base >=4.6 && <5,
     bindings-portaudio,
     boundingboxes >=0.2 && <0.4,
