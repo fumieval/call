@@ -32,9 +32,9 @@
 -----------------------------------------------------------------------------
 module Call.System (
   -- * The system
-  System
-  , runSystem
-  , forkSystem
+  Call
+  , Foundation
+  , runCall
   -- * Time
   , stand
   , wait
@@ -89,76 +89,48 @@ import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
+import Data.Reflection
 
-setFPS :: Float -> System s ()
-setFPS f = mkSystem $ \fo -> writeIORef (targetFPS fo) f
+setFPS :: Call => Float -> IO ()
+setFPS f = writeIORef (targetFPS given) f
 
-newtype System s a = System (ReaderT (Foundation s) IO a) deriving (Functor, Applicative, Monad)
+type Call = Given Foundation
 
-instance Affine a => Affine (System s a) where
-  type Vec (System s a) = Vec a
-  type Normal (System s a) = Normal a
-  translate t = fmap (translate t)
-  scale t = fmap (scale t)
-  rotateOn t = fmap (rotateOn t)
+linkGraphic :: Call => (Time -> IO Sight) -> IO ()
+linkGraphic f = do
+  g <- readIORef $ coreGraphic given
+  writeIORef (coreGraphic given) $ \dt -> liftA2 (<>) (f dt) (g dt)
 
-instance Figure a => Figure (System s a) where
-  primitive p v = return $ primitive p v
-  color c = fmap (color c)
-  line = return . line
-  polygon = return . polygon
-  polygonOutline = return . polygonOutline
-  circle = return . circle
-  circleOutline = return . circleOutline
-
-instance Monoid a => Monoid (System s a) where
-  mempty = return mempty
-  mappend = liftA2 mappend
-
-unSystem :: Foundation s -> System s a -> IO a
-unSystem f m = unsafeCoerce m f
-
-mkSystem :: (Foundation s -> IO a) -> System s a
-mkSystem = unsafeCoerce
-
-forkSystem :: System s () -> System s ThreadId
-forkSystem m = mkSystem $ \fo -> forkIO (unSystem fo m)
-
-linkGraphic :: (Time -> System s Sight) -> System s ()
-linkGraphic f = mkSystem $ \fo -> do
-  g <- readIORef $ coreGraphic fo
-  writeIORef (coreGraphic fo) $ \dt -> liftA2 (<>) (f dt) (g dt)
-
-linkPicture :: (Time -> System s Picture) -> System s ()
+linkPicture :: Call => (Time -> IO Picture) -> IO ()
 linkPicture f = linkGraphic (fmap viewPicture . f)
 
-linkAudio :: (Time -> Int -> System s (V.Vector Stereo)) -> System s ()
-linkAudio f = mkSystem $ \fo -> do
-  g <- readIORef $ coreAudio fo
-  writeIORef (coreAudio fo) $ \dt n -> liftA2 (V.zipWith (+)) (f dt n) (g dt n)
+linkAudio :: Call => (Time -> Int -> IO (V.Vector Stereo)) -> IO ()
+linkAudio f = do
+  g <- readIORef $ coreAudio given
+  writeIORef (coreAudio given) $ \dt n -> liftA2 (V.zipWith (+)) (f dt n) (g dt n)
 
-linkKeyboard :: (Chatter Key -> System s ()) -> System s ()
-linkKeyboard f = mkSystem $ \fo -> do
-  g <- readIORef $ coreKeyboard fo
-  writeIORef (coreKeyboard fo) $ \k -> f k >> g k
+linkKeyboard :: Call => (Chatter Key -> IO ()) -> IO ()
+linkKeyboard f = do
+  g <- readIORef $ coreKeyboard given
+  writeIORef (coreKeyboard given) $ \k -> f k >> g k
 
-linkMouse :: (MouseEvent -> System s ()) -> System s ()
-linkMouse f = mkSystem $ \fo -> do
-  g <- readIORef $ coreMouse fo
-  writeIORef (coreMouse fo) $ \k -> f k >> g k
+linkMouse :: Call => (MouseEvent -> IO ()) -> IO ()
+linkMouse f = do
+  g <- readIORef $ coreMouse given
+  writeIORef (coreMouse given) $ \k -> f k >> g k
 
-linkGamepad :: (GamepadEvent -> System s ()) -> System s ()
-linkGamepad f = mkSystem $ \fo -> do
-  g <- readIORef $ coreJoypad fo
-  writeIORef (coreJoypad fo) $ \k -> f k >> g k
+linkGamepad :: Call => (GamepadEvent -> IO ()) -> IO ()
+linkGamepad f = do
+  g <- readIORef $ coreJoypad given
+  writeIORef (coreJoypad given) $ \k -> f k >> g k
 
-data Foundation s = Foundation
+data Foundation = Foundation
   { sampleRate :: Float
-  , coreGraphic :: IORef (Time -> System s Sight)
-  , coreAudio :: IORef (Time -> Int -> System s (V.Vector (V2 Float)))
-  , coreKeyboard :: IORef (Chatter Key -> System s ())
-  , coreMouse :: IORef (MouseEvent -> System s ())
-  , coreJoypad :: IORef (GamepadEvent -> System s ())
+  , coreGraphic :: IORef (Time -> IO Sight)
+  , coreAudio :: IORef (Time -> Int -> IO (V.Vector (V2 Float)))
+  , coreKeyboard :: IORef (Chatter Key -> IO ())
+  , coreMouse :: IORef (MouseEvent -> IO ())
+  , coreJoypad :: IORef (GamepadEvent -> IO ())
   , theTime :: MVar Time
   , theSystem :: G.System
   , targetFPS :: IORef Float
@@ -167,10 +139,10 @@ data Foundation s = Foundation
   , theGamepadButtons :: IORef (IM.IntMap (String, IM.IntMap Bool))
   }
 
-runSystem :: WindowMode -> Box V2 Float -> (forall s. System s a) -> IO (Maybe a)
-runSystem mode box m = do
+runCall :: WindowMode -> Box V2 Float -> (Call => IO a) -> IO (Maybe a)
+runCall mode box m = do
   sys <- G.beginGLFW mode box
-  f <- Foundation
+  fd <- Foundation
     <$> pure 44100 -- FIX THIS
     <*> newIORef (const $ return mempty)
     <*> newIORef (\_ n -> return $ V.replicate n zero)
@@ -184,10 +156,11 @@ runSystem mode box m = do
     <*> newEmptyMVar
     <*> newIORef IM.empty
   let win = G.theWindow sys
-  GLFW.setKeyCallback win $ Just $ keyCallback f
-  GLFW.setMouseButtonCallback win $ Just $ mouseButtonCallback f
-  GLFW.setCursorPosCallback win $ Just $ cursorPosCallback f
-  GLFW.setScrollCallback win $ Just $ scrollCallback f
+  give fd $ do
+    GLFW.setKeyCallback win $ Just keyCallback
+    GLFW.setMouseButtonCallback win $ Just mouseButtonCallback
+    GLFW.setCursorPosCallback win $ Just cursorPosCallback
+    GLFW.setScrollCallback win $ Just scrollCallback
   GL.UniformLocation loc <- GL.get $ GL.uniformLocation (G.theProgram sys) "color"
   with (V4 1 1 1 1 :: V4 Float) $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
 
@@ -205,167 +178,162 @@ runSystem mode box m = do
   print =<< GLFW.getWindowOpenGLProfile win
 
   ref <- newEmptyMVar
-  _ <- flip forkFinally (either throwIO (putMVar ref)) $ unSystem f m
-  PA.with 44100 512 (audioProcess f) $ liftIO $ do
+  _ <- flip forkFinally (either throwIO (putMVar ref)) (give fd m)
+  give fd $ PA.with 44100 512 audioProcess $ liftIO $ do
     GLFW.setTime 0
-    runGraphic f 0
+    runGraphic 0
   G.endGLFW sys
   tryTakeMVar ref
 
-stand :: System s ()
-stand = mkSystem $ \fo -> takeMVar (theEnd fo)
+stand :: Call => IO ()
+stand = takeMVar (theEnd given)
 
-wait :: Time -> System s ()
-wait dt = mkSystem $ \fo -> do
-  t0 <- takeMVar (theTime fo)
+wait :: Call => Time -> IO ()
+wait dt = do
+  t0 <- takeMVar (theTime given)
   Just t <- GLFW.getTime
   threadDelay $ floor $ (t0 - realToFrac t + dt) * 1000 * 1000
-  putMVar (theTime fo) $ t0 + dt
+  putMVar (theTime given) $ t0 + dt
 
-getTime :: System s Time
-getTime = mkSystem $ \fo -> readMVar (theTime fo)
+getTime :: Call => IO Time
+getTime = readMVar (theTime given)
 
-keyPress :: Key -> System s Bool
-keyPress k = mkSystem $ \fo -> fmap (/=GLFW.KeyState'Released)
-  $ GLFW.getKey (G.theWindow $ theSystem fo) (toEnum . fromEnum $ k)
+keyPress :: Call => Key -> IO Bool
+keyPress k = fmap (/=GLFW.KeyState'Released)
+  $ GLFW.getKey (G.theWindow $ theSystem given) (toEnum . fromEnum $ k)
 
-mousePosition :: System s (V2 Float)
-mousePosition = mkSystem $ \fo -> do
-  (x, y) <- GLFW.getCursorPos (G.theWindow $ theSystem fo)
+mousePosition :: Call => IO (V2 Float)
+mousePosition = do
+  (x, y) <- GLFW.getCursorPos (G.theWindow $ theSystem given)
   return $ V2 (realToFrac x) (realToFrac y)
 
-hideCursor :: System s ()
-hideCursor = mkSystem $ \fo -> GLFW.setCursorInputMode (G.theWindow $ theSystem fo) GLFW.CursorInputMode'Hidden
+hideCursor :: Call => IO ()
+hideCursor = GLFW.setCursorInputMode (G.theWindow $ theSystem given) GLFW.CursorInputMode'Hidden
 
-disableCursor :: System s ()
-disableCursor = mkSystem $ \fo -> GLFW.setCursorInputMode (G.theWindow $ theSystem fo) GLFW.CursorInputMode'Disabled
+disableCursor :: Call => IO ()
+disableCursor = GLFW.setCursorInputMode (G.theWindow $ theSystem given) GLFW.CursorInputMode'Disabled
 
-enableCursor :: System s ()
-enableCursor = mkSystem $ \fo -> GLFW.setCursorInputMode (G.theWindow $ theSystem fo) GLFW.CursorInputMode'Normal
+enableCursor :: Call => IO ()
+enableCursor = GLFW.setCursorInputMode (G.theWindow $ theSystem given) GLFW.CursorInputMode'Normal
 
-mouseButton :: Int -> System s Bool
-mouseButton b = mkSystem $ \fo -> fmap (/=GLFW.MouseButtonState'Released)
-  $ GLFW.getMouseButton (G.theWindow $ theSystem fo) (toEnum b)
+mouseButton :: Int -> Call => IO Bool
+mouseButton b = fmap (/=GLFW.MouseButtonState'Released)
+  $ GLFW.getMouseButton (G.theWindow $ theSystem given) (toEnum b)
 
-getGamepads :: System s [Gamepad]
-getGamepads = mkSystem $ const $ fmap catMaybes $ forM [(GLFW.Joystick'1)..]
+getGamepads :: Call => IO [Gamepad]
+getGamepads = fmap catMaybes $ forM [(GLFW.Joystick'1)..]
   $ \j -> fmap (Gamepad (fromEnum j)) <$> GLFW.getJoystickName j
 
-gamepadAxes :: Gamepad -> System s [Float]
-gamepadAxes (Gamepad i _) = mkSystem $ const $ maybe [] (map realToFrac) <$> GLFW.getJoystickAxes (toEnum i)
+gamepadAxes :: Call => Gamepad -> IO [Float]
+gamepadAxes (Gamepad i _) = maybe [] (map realToFrac) <$> GLFW.getJoystickAxes (toEnum i)
 
-gamepadButtons :: Gamepad -> System s [Bool]
-gamepadButtons (Gamepad i _) = mkSystem $ const
-  $ maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
+gamepadButtons :: Call => Gamepad -> IO [Bool]
+gamepadButtons (Gamepad i _) = maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
 
-clearColor :: V4 Float -> System s ()
+clearColor :: Call => V4 Float -> IO ()
 clearColor col = liftIO $ GL.clearColor $= unsafeCoerce col
 
-setBoundingBox :: Box V2 Float -> System s ()
-setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = mkSystem $ \fo -> do
-  GLFW.setWindowSize (G.theWindow $ theSystem fo) (floor (x1 - x0)) (floor (y1 - y0))
-  writeIORef (G.refRegion $ theSystem fo) box
+setBoundingBox :: Call => Box V2 Float -> IO ()
+setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = do
+  GLFW.setWindowSize (G.theWindow $ theSystem given) (floor (x1 - x0)) (floor (y1 - y0))
+  writeIORef (G.refRegion $ theSystem given) box
 
-getBoundingBox :: System s (Box V2 Float)
-getBoundingBox = mkSystem $ \fo -> readIORef (G.refRegion $ theSystem fo)
+getBoundingBox :: Call => IO (Box V2 Float)
+getBoundingBox = readIORef (G.refRegion $ theSystem given)
 
-takeScreenshot :: System s Bitmap
-takeScreenshot = mkSystem $ \fo -> G.screenshot (theSystem fo) >>= liftImage'
+takeScreenshot :: Call => IO Bitmap
+takeScreenshot = G.screenshot (theSystem given) >>= liftImage'
 
-setTitle :: String -> System s ()
-setTitle str = mkSystem $ \fo -> GLFW.setWindowTitle (G.theWindow $ theSystem fo) str
+setTitle :: Call => String -> IO ()
+setTitle str = GLFW.setWindowTitle (G.theWindow $ theSystem given) str
 
-instance MonadIO (System s) where
-  liftIO m = mkSystem $ const m
-  {-# INLINE liftIO #-}
-
-pollGamepad :: Foundation s -> IO ()
-pollGamepad fo = do
-  m <- readIORef (coreJoypad fo)
-  ps <- IM.fromList <$> map (\p@(Gamepad i _) -> (i, p)) <$> unSystem fo getGamepads
-  bs0 <- readIORef (theGamepadButtons fo)
+pollGamepad :: Call => IO ()
+pollGamepad = do
+  m <- readIORef (coreJoypad given)
+  ps <- IM.fromList <$> map (\p@(Gamepad i _) -> (i, p)) <$> getGamepads
+  bs0 <- readIORef (theGamepadButtons given)
 
   bs0' <- forM (IM.toList $ ps IM.\\ bs0) $ \(i, p@(Gamepad _ s)) -> do
-    unSystem fo $ m $ PadConnection $ Up p
+    m $ PadConnection $ Up p
     return (i, (s, IM.empty))
 
   bs0_ <- forM (IM.toList $ bs0 IM.\\ ps) $ \(i, (s, _)) -> do
-    unSystem fo $ m $ PadConnection $ Down $ Gamepad i s
+    m $ PadConnection $ Down $ Gamepad i s
     return (i, ())
 
   let bs1 = bs0 `IM.union` IM.fromList bs0' IM.\\ IM.fromList bs0_
 
   ls <- forM (IM.toList ps) $ \(j, p@(Gamepad _ s)) -> do
-    bs <- zip [0..] <$> unSystem fo (gamepadButtons p)
+    bs <- zip [0..] <$> gamepadButtons p
     forM_ bs $ \(i, v) -> case (v, maybe False id (bs1 ^? ix j . _2 . ix i)) of
-        (False, True) -> unSystem fo $ m $ PadButton p (Up i)
-        (True, False) -> unSystem fo $ m $ PadButton p (Down i)
+        (False, True) -> m $ PadButton p (Up i)
+        (True, False) -> m $ PadButton p (Down i)
         _ -> return ()
     return (j, (s, IM.fromList bs))
 
-  writeIORef (theGamepadButtons fo) $ foldr (uncurry IM.insert) bs1 ls
+  writeIORef (theGamepadButtons given) $ foldr (uncurry IM.insert) bs1 ls
 
-runGraphic :: Foundation s -> Time -> IO ()
-runGraphic fo t0 = do
-  pollGamepad fo
-  fps <- readIORef (targetFPS fo)
+runGraphic :: Call => Time -> IO ()
+runGraphic t0 = do
+  pollGamepad
+  fps <- readIORef (targetFPS given)
   let t1 = t0 + 1/fps
-  G.beginFrame (theSystem fo)
-  m <- readIORef (coreGraphic fo)
-  pic <- unSystem fo $ m (1/fps) -- is it appropriate?
-  drawSight fo pic
-  b <- G.endFrame (theSystem fo)
+  G.beginFrame (theSystem given)
+  m <- readIORef (coreGraphic given)
+  pic <- m (1/fps) -- is it appropriate?
+  drawSight pic
+  b <- G.endFrame (theSystem given)
 
   Just t' <- GLFW.getTime
   threadDelay $ floor $ (t1 - realToFrac t') * 1000 * 1000
 
-  tryTakeMVar (theEnd fo) >>= \case
+  tryTakeMVar (theEnd given) >>= \case
       Just _ -> return ()
-      _ | b -> putMVar (theEnd fo) ()
-        | otherwise -> runGraphic fo t1
+      _ | b -> putMVar (theEnd given) ()
+        | otherwise -> runGraphic t1
 
-audioProcess :: Foundation s -> Int -> IO (V.Vector Stereo)
-audioProcess fo n = do
-  let dt = fromIntegral n / sampleRate fo
-  m <- readIORef (coreAudio fo)
-  unSystem fo $ m dt n
+audioProcess :: Call => Int -> IO (V.Vector Stereo)
+audioProcess n = do
+  let dt = fromIntegral n / sampleRate given
+  m <- readIORef (coreAudio given)
+  m dt n
 
-keyCallback :: Foundation s -> GLFW.KeyCallback
-keyCallback fo _ k _ st _ = do
-  m <- readIORef (coreKeyboard fo)
-  unSystem fo $ m $ case st of
+keyCallback :: Call => GLFW.KeyCallback
+keyCallback _ k _ st _ = do
+  m <- readIORef (coreKeyboard given)
+  m $ case st of
     GLFW.KeyState'Released -> Up (toEnum . fromEnum $ k :: Key)
     _ -> Down (toEnum . fromEnum $ k :: Key)
 
-mouseButtonCallback :: Foundation s -> GLFW.MouseButtonCallback
-mouseButtonCallback fo _ btn st _ = do
-  m <- readIORef (coreMouse fo)
-  unSystem fo $ m $ case st of
+mouseButtonCallback :: Call => GLFW.MouseButtonCallback
+mouseButtonCallback _ btn st _ = do
+  m <- readIORef (coreMouse given)
+  m $ case st of
     GLFW.MouseButtonState'Released -> Button $ Up (fromEnum btn)
     _ -> Button $ Down (fromEnum btn)
 
-cursorPosCallback :: Foundation s -> GLFW.CursorPosCallback
-cursorPosCallback fo _ x y = do
-  m <- readIORef (coreMouse fo)
-  unSystem fo $ m $ Cursor $ fmap realToFrac $ V2 x y
+cursorPosCallback :: Call => GLFW.CursorPosCallback
+cursorPosCallback _ x y = do
+  m <- readIORef (coreMouse given)
+  m $ Cursor $ fmap realToFrac $ V2 x y
 
-scrollCallback :: Foundation s -> GLFW.ScrollCallback
-scrollCallback fo _ x y = do
-  m <- readIORef (coreMouse fo)
-  unSystem fo $ m $ Scroll $ fmap realToFrac $ V2 x y
+scrollCallback :: Call => GLFW.ScrollCallback
+scrollCallback _ x y = do
+  m <- readIORef (coreMouse given)
+  m $ Scroll $ fmap realToFrac $ V2 x y
 
-fetchTexture :: Foundation s -> C.Image C.PixelRGBA8 -> Int -> IO G.Texture
-fetchTexture fo bmp h = do
-  st <- readIORef (textures fo)
+fetchTexture :: Call => C.Image C.PixelRGBA8 -> Int -> IO G.Texture
+fetchTexture bmp h = do
+  st <- readIORef (textures given)
   case IM.lookup h st of
     Just t -> return t
     Nothing -> do
       t <- G.installTexture bmp
-      writeIORef (textures fo) $ IM.insert h t st
+      writeIORef (textures given) $ IM.insert h t st
       return t
 
-drawScene :: Foundation s -> Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
-drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
+drawScene :: Call => Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
+drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
   GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
 
   GL.currentProgram $= Just shaderProg
@@ -374,7 +342,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
   GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "textureMix"
   s (pure $ return ()) (liftA2 (>>)) (prim locT) fx trans (V4 1 1 1 1, 0)
   where
-    shaderProg = G.theProgram $ theSystem fo
+    shaderProg = G.theProgram $ theSystem given
     prim locT Blank mode vs _ = do
       GL.glUniform1f locT 0
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
@@ -382,7 +350,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.drawArrays mode 0 $ fromIntegral $ V.length vs
     prim locT (Bitmap bmp _ h) mode vs _ = do
       GL.glUniform1f locT 1
-      (tex, _, _) <- fetchTexture fo bmp h
+      (tex, _, _) <- fetchTexture bmp h
       GL.activeTexture $= GL.TextureUnit 0
       GL.textureBinding GL.Texture2D $= Just tex
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
@@ -406,7 +374,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
     fx (SphericalAdd (Bitmap bmp _ h) m) c = do
       withLoc "useEnv" $ \loc -> GL.glUniform1i loc 1
       withLoc "envAdd" $ \loc -> GL.glUniform1f loc 1
-      (tex, _, _) <- fetchTexture fo bmp h
+      (tex, _, _) <- fetchTexture bmp h
       GL.activeTexture $= GL.TextureUnit 1
       GL.textureBinding GL.Texture2D $= Just tex
       GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
@@ -417,7 +385,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
     fx (SphericalMultiply (Bitmap bmp _ h) m) c = do
       withLoc "useEnv" $ \loc -> GL.glUniform1i loc 1
       withLoc "envMul" $ \loc -> GL.glUniform1f loc 1
-      (tex, _, _) <- fetchTexture fo bmp h
+      (tex, _, _) <- fetchTexture bmp h
 
       GL.activeTexture $= GL.TextureUnit 1
       GL.textureBinding GL.Texture2D $= Just tex
@@ -430,7 +398,7 @@ drawScene fo (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg str
       m loc
 
-drawSight :: Foundation s -> Sight -> IO ()
-drawSight fo (Sight s) = do
-  b <- readIORef $ G.refRegion $ theSystem fo
-  s b (return ()) (>>) (drawScene fo)
+drawSight :: Call => Sight -> IO ()
+drawSight (Sight s) = do
+  b <- readIORef $ G.refRegion $ theSystem given
+  s b (return ()) (>>) drawScene
