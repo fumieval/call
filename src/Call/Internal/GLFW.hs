@@ -16,7 +16,8 @@ import Control.Applicative
 import Control.Lens
 import Data.IORef
 import Data.BoundingBox
-import Data.Typeable
+import Data.Graphics.Class
+import Data.Graphics.Vertex
 import Control.Monad
 import Graphics.Rendering.OpenGL.GL.StateVar
 import Linear
@@ -32,16 +33,13 @@ import qualified GHC.IO.Encoding as Encoding
 import qualified Data.Text.IO as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.C (CFloat)
-import Foreign (nullPtr, plusPtr, sizeOf)
-import Data.Graphics
+import Foreign
 import Paths_call
 data System = System
   { refRegion :: IORef (Box V2 Float)
   , theWindow :: GLFW.Window
   , theProgram :: GL.Program
   }
-
-data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read, Typeable)
 
 type Texture = (GL.TextureObject, Double, Double)
 
@@ -60,7 +58,7 @@ installTexture (Image w h v) = do
   let siz = GL.TextureSize2D (gsizei w) (gsizei h)
   V.unsafeWith v
     $ GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGBA8 siz 0
-    . GL.PixelData GL.ABGR GL.UnsignedInt8888
+    . GL.PixelData GL.RGBA GL.UnsignedByte
   return (tex, fromIntegral w / 2, fromIntegral h / 2)
 
 releaseTexture :: Texture -> IO ()
@@ -72,28 +70,27 @@ beginFrame _ = do
 
 endFrame :: System -> IO Bool
 endFrame sys = do
+  -- mapM_ print =<< GL.get GL.errors
   GLFW.swapBuffers $ theWindow sys
   GLFW.pollEvents
   GLFW.windowShouldClose (theWindow sys)
 
-beginGLFW :: WindowMode -> Box V2 Float -> IO System
-beginGLFW mode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
+beginGLFW :: Bool -> Bool -> Box V2 Float -> IO System
+beginGLFW full resiz bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   Encoding.setForeignEncoding Encoding.utf8
   let title = "call"
       ww = floor $ x1 - x0
       wh = floor $ y1 - y0
   () <- unlessM GLFW.init (fail "Failed to initialize")
 
-  mon <- case mode of
-    FullScreen -> GLFW.getPrimaryMonitor
-    _ -> return Nothing
+  mon <- if full then GLFW.getPrimaryMonitor else return Nothing
 
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
-  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 3
+  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 2
   GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
   GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
 
-  GLFW.windowHint $ GLFW.WindowHint'Resizable $ mode == Resizable
+  GLFW.windowHint $ GLFW.WindowHint'Resizable resiz
   win <- GLFW.createWindow ww wh title mon Nothing >>= maybe (fail "Failed to create a window") return
   GLFW.makeContextCurrent (Just win)
   prog <- initializeGL
@@ -161,17 +158,10 @@ initializeGL = do
   GL.linkProgram shaderProg
   GL.currentProgram $= Just shaderProg
 
-  -- GL.blend $= GL.Disabled
   GL.depthMask $= GL.Enabled
   GL.depthFunc $= Just GL.Lequal
   GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
-  {-
-  GL.depthMask $= GL.Disabled
-  GL.depthFunc $= Nothing
 
-  GL.colorMask $= GL.Color4 GL.Enabled GL.Enabled GL.Enabled GL.Enabled
-  -}
-  -- GL.cullFace $= GL.Back
   GL.blend      $= GL.Enabled
   GL.blendFunc  $= (GL.SrcAlpha, GL.OneMinusSrcAlpha)
   linked <- GL.get (GL.linkStatus shaderProg)
