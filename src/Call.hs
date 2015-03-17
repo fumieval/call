@@ -57,7 +57,8 @@ module Call (
   , takeScreenshot
     -- * Reexports
   , module Data.Audio
-  , module Data.Graphics.Font
+  , module Data.Graphics
+  , module Data.Input.Event
   , module Control.Monad
   , module Control.Applicative
   , module Control.Bool
@@ -82,11 +83,9 @@ import Data.BoundingBox
 import Data.Color
 import Data.Color.Names
 import Data.Typeable
+import Data.Graphics as U
+import Data.Graphics
 import Data.Graphics.Bitmap as Bitmap
-import Data.Graphics.Font
-import Data.Graphics.Sight
-import Data.Graphics.Vertex
-import Data.Graphics.Class as U
 import Data.Input.Event
 import Data.IORef
 import Data.Maybe
@@ -98,6 +97,7 @@ import Linear
 import qualified Call.Internal.GLFW as G
 import qualified Call.Internal.PortAudio as PA
 import qualified Codec.Picture as C
+import qualified Data.Map.Strict as Map
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector.Storable as V
 import qualified Graphics.Rendering.OpenGL.GL as GL
@@ -159,6 +159,7 @@ data Foundation = Foundation
   , textures :: IORef (IM.IntMap G.Texture)
   , theEnd :: MVar ()
   , theGamepadButtons :: IORef (IM.IntMap (String, IM.IntMap Bool))
+  , slowdown :: IORef (Map.Map Time Time)
   }
 
 runCall :: WindowMode -> Box V2 Float -> (Call => IO a) -> IO (Maybe a)
@@ -177,6 +178,7 @@ runCall mode box m = do
     <*> newIORef IM.empty
     <*> newEmptyMVar
     <*> newIORef IM.empty
+    <*> newIORef Map.empty
   let win = G.theWindow sys
   give fd $ do
     GLFW.setKeyCallback win $ Just keyCallback
@@ -253,7 +255,7 @@ gamepadButtons :: Call => Gamepad -> IO [Bool]
 gamepadButtons (Gamepad i _) = maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
 
 clearColor :: Call => V4 Float -> IO ()
-clearColor col = liftIO $ GL.clearColor $= unsafeCoerce col
+clearColor (V4 r g b a) = liftIO $ GL.clearColor $= GL.Color4 (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
 
 setBoundingBox :: Call => Box V2 Float -> IO ()
 setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = do
@@ -299,20 +301,22 @@ runGraphic :: Call => Time -> IO ()
 runGraphic t0 = do
   pollGamepad
   fps <- readIORef (targetFPS given)
-  let t1 = t0 + 1/fps
   G.beginFrame (theSystem given)
   m <- readIORef (coreGraphic given)
   pic <- m (1/fps) -- is it appropriate?
   drawSight pic
   b <- G.endFrame (theSystem given)
 
-  Just t' <- GLFW.getTime
-  threadDelay $ floor $ (t1 - realToFrac t') * 1000 * 1000
+  Just t <- GLFW.getTime
+
+  case t0 + 1/fps - realToFrac t of
+    dt | dt > 0 -> threadDelay $ floor $ dt * 1000 * 1000
+       | otherwise -> return () -- modifyIORef_ (slowdown given) $ at t ?~ negate dt
 
   tryTakeMVar (theEnd given) >>= \case
       Just _ -> return ()
       _ | b -> putMVar (theEnd given) ()
-        | otherwise -> runGraphic t1
+        | otherwise -> runGraphic (t0 + 1 / fps)
 
 audioProcess :: Call => Int -> IO (V.Vector Stereo)
 audioProcess n = do
@@ -361,17 +365,22 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
   GL.currentProgram $= Just shaderProg
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
   with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 1 $ castPtr ptr
-  GL.UniformLocation locT <- GL.get $ GL.uniformLocation shaderProg "textureMix"
-  s (pure $ return ()) (liftA2 (>>)) (prim locT) fx trans (V4 1 1 1 1, 0)
+  GL.UniformLocation locTextureMix <- GL.get $ GL.uniformLocation shaderProg "textureMix"
+  GL.UniformLocation locMats <- GL.get $ GL.uniformLocation shaderProg "matrices"
+  GL.UniformLocation locLevel <- GL.get $ GL.uniformLocation shaderProg "level"
+  GL.UniformLocation locDiffuse <- GL.get $ GL.uniformLocation shaderProg "diffuse"
+  with (V4 1 1 (1 :: Float) 1) $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
+  s (pure $ return ()) (liftA2 (>>)) (prim locTextureMix) (fx locDiffuse) (trans locMats locLevel) (V4 1 1 1 1, 0)
   where
     shaderProg = G.theProgram $ theSystem given
-    prim locT Blank mode vs _ = do
-      GL.glUniform1f locT 0
+    prim locTextureMix Blank mode vs _ = do
+      GL.glUniform1f locTextureMix 0
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
       GL.drawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
-    prim locT (Bitmap bmp _ h) mode vs _ = do
-      GL.glUniform1f locT 1
+
+    prim locTextureMix (Bitmap bmp _ h) mode vs _ = do
+      GL.glUniform1f locTextureMix 1
       (tex, _, _) <- fetchTexture bmp h
       GL.activeTexture $= GL.TextureUnit 0
       GL.textureBinding GL.Texture2D $= Just tex
@@ -379,46 +388,20 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
       V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
         (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
       GL.drawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
-    trans f m (color0, n) = do
-      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "matrices"
-      GL.UniformLocation locN <- GL.get $ GL.uniformLocation shaderProg "level"
-      with f $ \ptr -> GL.glUniformMatrix4fv (loc+n) 1 1 (castPtr ptr)
-      GL.glUniform1i locN (unsafeCoerce $ n + 1)
-      () <- m (color0, n + 1)
-      GL.glUniform1i locN (unsafeCoerce n)
-    fx (EmbedIO m) c = m >>= ($ c)
-    fx (Diffuse col m) (color0, n) = do
-      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg "diffuse"
-      let c = col * color0
-      with c $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
-      m (c, n)
-      with color0 $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
-    fx (SphericalAdd (Bitmap bmp _ h) m) c = do
-      withLoc "useEnv" $ \loc -> GL.glUniform1i loc 1
-      withLoc "envAdd" $ \loc -> GL.glUniform1f loc 1
-      (tex, _, _) <- fetchTexture bmp h
-      GL.activeTexture $= GL.TextureUnit 1
-      GL.textureBinding GL.Texture2D $= Just tex
-      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
-      m c
-      withLoc "useEnv" $ \loc -> GL.glUniform1i loc 0
-      withLoc "envAdd" $ \loc -> GL.glUniform1f loc 0
-    fx (SphericalAdd Blank m) c = m c
-    fx (SphericalMultiply (Bitmap bmp _ h) m) c = do
-      withLoc "useEnv" $ \loc -> GL.glUniform1i loc 1
-      withLoc "envMul" $ \loc -> GL.glUniform1f loc 1
-      (tex, _, _) <- fetchTexture bmp h
 
-      GL.activeTexture $= GL.TextureUnit 1
-      GL.textureBinding GL.Texture2D $= Just tex
-      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
-      m c
-      withLoc "useEnv" $ \loc -> GL.glUniform1i loc 0
-      withLoc "envMul" $ \loc -> GL.glUniform1f loc 0
-    fx (SphericalMultiply Blank m) c = m c
-    withLoc str m = do
-      GL.UniformLocation loc <- GL.get $ GL.uniformLocation shaderProg str
-      m loc
+    trans locMats locLevel f m (color0, n) = do
+      with f $ \ptr -> GL.glUniformMatrix4fv (locMats + n) 1 1 (castPtr ptr)
+      GL.glUniform1i locLevel (unsafeCoerce $ n + 1)
+      () <- m (color0, n + 1)
+      GL.glUniform1i locLevel (unsafeCoerce n)
+
+    fx locDiffuse (EmbedIO m) c = m >>= ($ c)
+
+    fx locDiffuse (Diffuse col m) (color0, n) = do
+      let c = col * color0
+      with c $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
+      m (c, n)
+      with color0 $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
 
 drawSight :: Call => Sight -> IO ()
 drawSight (Sight s) = do

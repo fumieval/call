@@ -12,7 +12,6 @@ category:            Game
 build-type:          Simple
 data-files:
   shaders/*.glsl
-  data/*.ttf
 cabal-version:       >=1.10
 
 flag BuildHelloWorld
