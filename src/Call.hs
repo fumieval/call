@@ -32,6 +32,8 @@ module Call (
   , wait
   , getTime
   , setFPS
+  , getSlowdown
+  , getFPS
   -- * Raw input
   , keyPress
   , mousePosition
@@ -82,6 +84,7 @@ import Data.Audio
 import Data.BoundingBox
 import Data.Color
 import Data.Color.Names
+import qualified Data.Foldable as F
 import Data.Typeable
 import Data.Graphics as U
 import Data.Graphics
@@ -115,6 +118,13 @@ readBitmap = Bitmap.readFile
 
 setFPS :: Call => Float -> IO ()
 setFPS f = writeIORef (targetFPS given) f
+
+-- | @(Actual FPS) = (Target FPS) / (1 + (Slowdown))@
+getFPS :: Call => IO Float
+getFPS = do
+  t <- readIORef (targetFPS given)
+  r <- getSlowdown
+  return $ t / (1 + r)
 
 type Call = Given Foundation
 
@@ -297,6 +307,12 @@ pollGamepad = do
 
   writeIORef (theGamepadButtons given) $ foldr (uncurry IM.insert) bs1 ls
 
+getSlowdown :: Call => IO Float
+getSlowdown = do
+  m <- readIORef (slowdown given)
+  Just t0 <- GLFW.getTime
+  return $ F.sum m
+
 runGraphic :: Call => Time -> IO ()
 runGraphic t0 = do
   pollGamepad
@@ -307,16 +323,19 @@ runGraphic t0 = do
   drawSight pic
   b <- G.endFrame (theSystem given)
 
-  Just t <- GLFW.getTime
+  Just t <- fmap (fmap realToFrac) $ GLFW.getTime
 
   case t0 + 1/fps - realToFrac t of
     dt | dt > 0 -> threadDelay $ floor $ dt * 1000 * 1000
-       | otherwise -> return () -- modifyIORef_ (slowdown given) $ at t ?~ negate dt
+       | otherwise -> modifyIORef' (slowdown given) $ \m -> m
+        & at t ?~ negate dt
+        & Map.split (t - 1)
+        & snd
 
   tryTakeMVar (theEnd given) >>= \case
       Just _ -> return ()
       _ | b -> putMVar (theEnd given) ()
-        | otherwise -> runGraphic (t0 + 1 / fps)
+        | otherwise -> runGraphic (max t (t0 + 1/fps))
 
 audioProcess :: Call => Int -> IO (V.Vector Stereo)
 audioProcess n = do
