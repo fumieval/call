@@ -77,14 +77,15 @@ import Control.Bool
 import Control.Concurrent
 import Control.Exception
 import Control.Lens
-import Control.Monad
+import Control.Monad hiding (sequence, sequence_, mapM, mapM_, forM, forM_, msum)
 import Control.Monad.IO.Class
 import Control.Object
 import Data.Audio
 import Data.BoundingBox
 import Data.Color
 import Data.Color.Names
-import qualified Data.Foldable as F
+import Data.Traversable as T
+import Data.Foldable as F hiding (foldr)
 import Data.Typeable
 import Data.Graphics as U
 import Data.Graphics
