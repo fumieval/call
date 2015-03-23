@@ -102,6 +102,7 @@ import qualified Call.Internal.GLFW as G
 import qualified Call.Internal.PortAudio as PA
 import qualified Codec.Picture as C
 import qualified Data.Map.Strict as Map
+import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector.Storable as V
 import qualified Graphics.Rendering.OpenGL.GL as GL
@@ -167,7 +168,7 @@ data Foundation = Foundation
   , theTime :: MVar Time
   , theSystem :: G.System
   , targetFPS :: IORef Float
-  , textures :: IORef (IM.IntMap G.Texture)
+  , textures :: IORef (HM.HashMap Int G.Texture)
   , theEnd :: MVar ()
   , theGamepadButtons :: IORef (IM.IntMap (String, IM.IntMap Bool))
   , slowdown :: IORef (Map.Map Time Time)
@@ -186,7 +187,7 @@ runCall mode box m = do
     <*> newMVar 0
     <*> pure sys
     <*> newIORef 60
-    <*> newIORef IM.empty
+    <*> newIORef HM.empty
     <*> newEmptyMVar
     <*> newIORef IM.empty
     <*> newIORef Map.empty
@@ -288,25 +289,24 @@ pollGamepad = do
   ps <- IM.fromList <$> map (\p@(Gamepad i _) -> (i, p)) <$> getGamepads
   bs0 <- readIORef (theGamepadButtons given)
 
-  bs0' <- forM (IM.toList $ ps IM.\\ bs0) $ \(i, p@(Gamepad _ s)) -> do
+  bs0' <- iforM (ps IM.\\ bs0) $ \i p@(Gamepad _ s) -> do
     m $ PadConnection $ Up p
-    return (i, (s, IM.empty))
+    return (s, IM.empty)
 
-  bs0_ <- forM (IM.toList $ bs0 IM.\\ ps) $ \(i, (s, _)) -> do
+  bs0_ <- iforM (bs0 IM.\\ ps) $ \i (s, _) -> do
     m $ PadConnection $ Down $ Gamepad i s
-    return (i, ())
 
-  let bs1 = bs0 `IM.union` IM.fromList bs0' IM.\\ IM.fromList bs0_
+  let bs1 = bs0 `IM.union` bs0' IM.\\ bs0_
 
-  ls <- forM (IM.toList ps) $ \(j, p@(Gamepad _ s)) -> do
+  ls <- iforM ps $ \j p@(Gamepad _ s) -> do
     bs <- zip [0..] <$> gamepadButtons p
     forM_ bs $ \(i, v) -> case (v, maybe False id (bs1 ^? ix j . _2 . ix i)) of
         (False, True) -> m $ PadButton p (Up i)
         (True, False) -> m $ PadButton p (Down i)
         _ -> return ()
-    return (j, (s, IM.fromList bs))
+    return (s, IM.fromList bs)
 
-  writeIORef (theGamepadButtons given) $ foldr (uncurry IM.insert) bs1 ls
+  writeIORef (theGamepadButtons given) $ ifoldr IM.insert bs1 ls
 
 getSlowdown :: Call => IO Float
 getSlowdown = do
@@ -371,16 +371,19 @@ scrollCallback _ x y = do
 fetchTexture :: Call => C.Image C.PixelRGBA8 -> Int -> IO G.Texture
 fetchTexture bmp h = do
   st <- readIORef (textures given)
-  case IM.lookup h st of
+  case HM.lookup h st of
     Just t -> return t
     Nothing -> do
       t <- G.installTexture bmp
-      writeIORef (textures given) $ IM.insert h t st
+      writeIORef (textures given) $ HM.insert h t st
       return t
 
 drawScene :: Call => Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
-drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj _ (Scene s) = do
+drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene s) = do
   GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
+  if cull
+    then GL.cullFace $= Just GL.Back
+    else GL.cullFace $= Nothing
 
   GL.currentProgram $= Just shaderProg
   GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
