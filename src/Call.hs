@@ -70,6 +70,10 @@ module Call (
   , module Linear
   , module Control.Object
   , module Control.Monad.IO.Class
+  -- * Compatibility
+  , System
+  , runSystem
+  , runSystemDefault
 ) where
 
 import Control.Applicative
@@ -111,6 +115,17 @@ import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
 
 data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read, Typeable)
+
+{-# DEPRECATED System "Use IO instead" #-}
+type System s = IO
+
+{-# DEPRECATED runSystemDefault "Use runCallDefault instead" #-}
+runSystemDefault :: (Call => IO a) -> IO (Maybe a)
+runSystemDefault = runCallDefault
+
+{-# DEPRECATED runSystem "Use runCall instead" #-}
+runSystem :: WindowMode -> Box V2 Float -> (Call => IO a) -> IO (Maybe a)
+runSystem = runCall
 
 runCallDefault :: (Call => IO a) -> IO (Maybe a)
 runCallDefault = runCall Windowed (Box (V2 0 0) (V2 640 480))
@@ -289,7 +304,7 @@ pollGamepad = do
   ps <- IM.fromList <$> map (\p@(Gamepad i _) -> (i, p)) <$> getGamepads
   bs0 <- readIORef (theGamepadButtons given)
 
-  bs0' <- iforM (ps IM.\\ bs0) $ \i p@(Gamepad _ s) -> do
+  bs0' <- forM (ps IM.\\ bs0) $ \p@(Gamepad _ s) -> do
     m $ PadConnection $ Up p
     return (s, IM.empty)
 
@@ -311,7 +326,6 @@ pollGamepad = do
 getSlowdown :: Call => IO Float
 getSlowdown = do
   m <- readIORef (slowdown given)
-  Just t0 <- GLFW.getTime
   return $ F.sum m
 
 runGraphic :: Call => Time -> IO ()
@@ -328,7 +342,7 @@ runGraphic t0 = do
 
   case t0 + 1/fps - realToFrac t of
     dt | dt > 0 -> threadDelay $ floor $ dt * 1000 * 1000
-       | otherwise -> modifyIORef' (slowdown given) $ \m -> m
+       | otherwise -> modifyIORef' (slowdown given) $ \x -> x
         & at t ?~ negate dt
         & Map.split (t - 1)
         & snd
@@ -418,13 +432,15 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene s) = do
       () <- m (color0, n + 1)
       GL.glUniform1i locLevel (unsafeCoerce n)
 
-    fx locDiffuse (EmbedIO m) c = m >>= ($ c)
+    fx _ (EmbedIO m) c = m >>= ($ c)
 
     fx locDiffuse (Diffuse col m) (color0, n) = do
       let c = col * color0
       with c $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
       m (c, n)
       with color0 $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
+
+    fx _ _ _ = fail "Unsupported"
 
 drawSight :: Call => Sight -> IO ()
 drawSight (Sight s) = do

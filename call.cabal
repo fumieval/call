@@ -32,6 +32,9 @@ library
     Call
     Call.Internal.GLFW
     Call.Internal.PortAudio
+    Call.Util.Deck
+    Call.Util.Sampler
+    Call.Util.Text
   other-modules:
     Paths_call
   ghc-options: -Wall -fexcess-precision -O2 -optc-ffast-math
