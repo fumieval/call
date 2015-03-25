@@ -59,13 +59,13 @@ getHostApis = liftIO $ do
       name <- peekCAString $ c'PaHostApiInfo'name info
       return (Host (fromIntegral i) name)
 -}
-callback :: (Int -> IO (V.Vector (V2 Float))) -> Ptr () -> Ptr () -> CULong -> x -> y -> z -> IO CUInt
+callback :: (MV.IOVector (V2 Float) -> IO ()) -> Ptr () -> Ptr () -> CULong -> x -> y -> z -> IO CUInt
 callback f _ (castPtr -> pout) (fromIntegral -> n) _ _ _ = do
   fp <- newForeignPtr_ pout
-  f n >>= V.unsafeCopy (MV.unsafeFromForeignPtr0 fp n)
+  f $ MV.unsafeFromForeignPtr0 fp n
   return c'paContinue
 
-with :: MonadIO m => Float -> Int -> (Int -> IO (V.Vector (V2 Float))) -> m a -> m a
+with :: MonadIO m => Float -> Int -> (MV.IOVector (V2 Float) -> IO ()) -> m a -> m a
 with rate buf f m = do
   w c'Pa_Initialize
   cb <- liftIO $ mk'PaStreamCallback $ callback f

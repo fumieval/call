@@ -109,6 +109,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector.Storable as V
+import qualified Data.Vector.Storable.Mutable as MV
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.UI.GLFW as GLFW
@@ -156,7 +157,10 @@ linkPicture f = linkGraphic (fmap viewPicture . f)
 linkAudio :: Call => (Time -> Int -> IO (V.Vector Stereo)) -> IO ()
 linkAudio f = do
   g <- readIORef $ coreAudio given
-  writeIORef (coreAudio given) $ \dt n -> liftA2 (V.zipWith (+)) (f dt n) (g dt n)
+  writeIORef (coreAudio given) $ \mv -> do
+    let n = MV.length mv
+        dt = fromIntegral n / sampleRate given
+    f dt n >>= V.unsafeCopy mv
 
 linkKeyboard :: Call => (Chatter Key -> IO ()) -> IO ()
 linkKeyboard f = do
@@ -176,7 +180,7 @@ linkGamepad f = do
 data Foundation = Foundation
   { sampleRate :: Float
   , coreGraphic :: IORef (Time -> IO Sight)
-  , coreAudio :: IORef (Time -> Int -> IO (V.Vector (V2 Float)))
+  , coreAudio :: IORef (MV.IOVector Stereo -> IO ())
   , coreKeyboard :: IORef (Chatter Key -> IO ())
   , coreMouse :: IORef (MouseEvent -> IO ())
   , coreJoypad :: IORef (GamepadEvent -> IO ())
@@ -195,7 +199,7 @@ runCall mode box m = do
   fd <- Foundation
     <$> pure 44100 -- FIX THIS
     <*> newIORef (const $ return mempty)
-    <*> newIORef (\_ n -> return $ V.replicate n zero)
+    <*> newIORef (const $ return ())
     <*> newIORef (const $ return ())
     <*> newIORef (const $ return ())
     <*> newIORef (const $ return ())
@@ -352,11 +356,10 @@ runGraphic t0 = do
       _ | b -> putMVar (theEnd given) ()
         | otherwise -> runGraphic (max t (t0 + 1/fps))
 
-audioProcess :: Call => Int -> IO (V.Vector Stereo)
-audioProcess n = do
-  let dt = fromIntegral n / sampleRate given
+audioProcess :: Call => MV.IOVector Stereo -> IO ()
+audioProcess mv = do
   m <- readIORef (coreAudio given)
-  m dt n
+  m mv
 
 keyCallback :: Call => GLFW.KeyCallback
 keyCallback _ k _ st _ = do
