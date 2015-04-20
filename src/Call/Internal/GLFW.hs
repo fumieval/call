@@ -1,4 +1,4 @@
-{-# LANGUAGE ViewPatterns, BangPatterns, DeriveDataTypeable #-}
+{-# LANGUAGE CPP, ViewPatterns, BangPatterns, DeriveDataTypeable #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Call.Internal.GLFW
@@ -13,13 +13,14 @@
 module Call.Internal.GLFW where
 import Codec.Picture
 import Codec.Picture.RGBA8
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
+#endif
 import Control.Bool
 import Control.Lens
 import Control.Monad
 import Data.Bits
 import Data.BoundingBox
-import Data.Graphics.Class
 import Data.Graphics.Vertex
 import Data.IORef
 import Foreign
@@ -35,7 +36,6 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified GHC.IO.Encoding as Encoding
 import qualified Graphics.UI.GLFW as GLFW
-import Unsafe.Coerce
 
 data System = System
   { refRegion :: IORef (Box V2 Float)
@@ -51,7 +51,7 @@ installTexture (Image w h vec) = do
   glBindTexture GL_TEXTURE_2D tex
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_LINEAR
-  let level = floor $ logBase 2 $ fromIntegral (max w h)
+  let level = floor $ logBase (2 :: Float) $ fromIntegral (max w h)
   glTexStorage2D GL_TEXTURE_2D level GL_SRGB8 (fromIntegral w) (fromIntegral h)
 
   V.unsafeWith vec $ glTexSubImage2D GL_TEXTURE_2D 0 0 0 (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE . castPtr
@@ -103,7 +103,7 @@ beginGLFW full resiz bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   return $ System rbox win prog
 
--- compileShader :: FilePath -> GL.Shader -> IO ()
+compileShader :: FilePath -> GLuint -> IO ()
 compileShader path shader = do
   src <- getDataFileName path >>= Text.readFile
   BS.useAsCString (Text.encodeUtf8 src) $ \ptr -> withArray [ptr]
@@ -113,6 +113,7 @@ compileShader path shader = do
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
 overPtr f = alloca $ \p -> f p >> peek p
 
+initializeGL :: IO GLuint
 initializeGL = do
   let vertexAttribute = 0
   let uvAttribute = 1
@@ -176,7 +177,7 @@ initializeGL = do
 
   return shaderProg
 
-
+withUniform :: GLuint -> String -> (GLint -> IO a) -> IO a
 withUniform prog str k = withCString str $ \p -> glGetUniformLocation prog p >>= k
 
 endGLFW :: System -> IO ()
