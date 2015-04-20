@@ -44,6 +44,7 @@ library
     base >=4.6 && <5,
     bindings-portaudio,
     boundingboxes >=0.2 && <0.4,
+    bytestring,
     colors >=0.3 && <0.4,
     containers >=0.5 && <0.7,
     control-bool >=0.2 && <0.4,
@@ -60,8 +61,6 @@ library
     linear >=1.13 && <2,
     mtl >=2.0 && <2.7,
     objective >= 1 && <1.1,
-    OpenGL >= 2.9 && <2.12,
-    OpenGLRaw >=1.4 && <1.7,
     random ==1.*,
     reflection,
     template-haskell == 2.*,
@@ -69,7 +68,8 @@ library
     transformers >=0.3 && <0.5,
     unordered-containers,
     vector >=0.9 && <0.13,
-    WAVE >=0.1 && <0.2
+    WAVE >=0.1 && <0.2,
+    gl
   hs-source-dirs:      src
   default-language:    Haskell2010
 

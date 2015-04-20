@@ -10,7 +10,6 @@ import Control.Monad
 import Linear
 import Control.Exception
 import Data.Typeable
-import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 
 data Error = NotInitialized

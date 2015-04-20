@@ -91,8 +91,8 @@ import Data.Color.Names
 import Data.Traversable as T
 import Data.Foldable as F hiding (foldr)
 import Data.Typeable
-import Data.Graphics as U
 import Data.Graphics
+import Data.Graphics as U
 import Data.Graphics.Bitmap as Bitmap
 import Data.Input.Event
 import Data.IORef
@@ -100,7 +100,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Reflection
 import Foreign (castPtr, sizeOf, with)
-import Graphics.Rendering.OpenGL.GL.StateVar
+import Graphics.GL
 import Linear
 import qualified Call.Internal.GLFW as G
 import qualified Call.Internal.PortAudio as PA
@@ -110,8 +110,6 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
-import qualified Graphics.Rendering.OpenGL.GL as GL
-import qualified Graphics.Rendering.OpenGL.Raw as GL
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
 
@@ -216,8 +214,10 @@ runCall mode box m = do
     GLFW.setMouseButtonCallback win $ Just mouseButtonCallback
     GLFW.setCursorPosCallback win $ Just cursorPosCallback
     GLFW.setScrollCallback win $ Just scrollCallback
-  GL.UniformLocation loc <- GL.get $ GL.uniformLocation (G.theProgram sys) "color"
-  with (V4 1 1 1 1 :: V4 Float) $ \ptr -> GL.glUniform4fv loc 1 (castPtr ptr)
+
+  G.withUniform (G.theProgram sys) "color"
+    $ \loc -> with (V4 1 1 1 1 :: V4 Float)
+    $ \ptr -> glUniform4fv loc 1 (castPtr ptr)
 
   print =<< GLFW.getWindowClientAPI win
   putStr "OpenGL Version: "
@@ -286,7 +286,7 @@ gamepadButtons :: Call => Gamepad -> IO [Bool]
 gamepadButtons (Gamepad i _) = maybe [] (map (==GLFW.JoystickButtonState'Pressed)) <$> GLFW.getJoystickButtons (toEnum i)
 
 clearColor :: Call => V4 Float -> IO ()
-clearColor (V4 r g b a) = liftIO $ GL.clearColor $= GL.Color4 (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
+clearColor (V4 r g b a) = glClearColor (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
 
 setBoundingBox :: Call => Box V2 Float -> IO ()
 setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = do
@@ -397,51 +397,53 @@ fetchTexture bmp h = do
 
 drawScene :: Call => Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
 drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene s) = do
-  GL.viewport $= (GL.Position x0 y0, GL.Size (x1 - x0) (y1 - y0))
+  glViewport x0 y0 (x1 - x0) (y1 - y0)
   if cull
-    then GL.cullFace $= Just GL.Back
-    else GL.cullFace $= Nothing
+    then glCullFace GL_BACK
+    else glCullFace GL_FRONT_AND_BACK
 
-  GL.currentProgram $= Just shaderProg
-  GL.UniformLocation loc <- GL.get (GL.uniformLocation shaderProg "projection")
-  with proj $ \ptr -> GL.glUniformMatrix4fv loc 1 1 $ castPtr ptr
-  GL.UniformLocation locTextureMix <- GL.get $ GL.uniformLocation shaderProg "textureMix"
-  GL.UniformLocation locMats <- GL.get $ GL.uniformLocation shaderProg "matrices"
-  GL.UniformLocation locLevel <- GL.get $ GL.uniformLocation shaderProg "level"
-  GL.UniformLocation locDiffuse <- GL.get $ GL.uniformLocation shaderProg "diffuse"
-  with (V4 1 1 (1 :: Float) 1) $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
+  glUseProgram shaderProg
+  G.withUniform shaderProg "projection" $ \loc -> with proj
+    $ \ptr -> glUniformMatrix4fv loc 1 1 $ castPtr ptr
+  locTextureMix <- G.withUniform shaderProg "textureMix" return
+  locMats <- G.withUniform shaderProg "matrices" return
+  locLevel <- G.withUniform shaderProg "level" return
+  locDiffuse <- G.withUniform shaderProg "diffuse" return
+  with (V4 1 1 (1 :: Float) 1) $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
   s (pure $ return ()) (liftA2 (>>)) (prim locTextureMix) (fx locDiffuse) (trans locMats locLevel) (V4 1 1 1 1, 0)
   where
+    draw mode vs = do
+      let siz = fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)
+      V.unsafeWith vs $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
+      glDrawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
+
     shaderProg = G.theProgram $ theSystem given
+
     prim locTextureMix Blank mode vs _ = do
-      GL.glUniform1f locTextureMix 0
-      V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
-        (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-      GL.drawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
+      glUniform1f locTextureMix 0
+      draw mode vs
 
     prim locTextureMix (Bitmap bmp _ h) mode vs _ = do
-      GL.glUniform1f locTextureMix 1
-      (tex, _, _) <- fetchTexture bmp h
-      GL.activeTexture $= GL.TextureUnit 0
-      GL.textureBinding GL.Texture2D $= Just tex
-      GL.textureFilter GL.Texture2D $= ((GL.Linear', Nothing), GL.Linear')
-      V.unsafeWith vs $ \v -> GL.bufferData GL.ArrayBuffer $=
-        (fromIntegral $ V.length vs * sizeOf (undefined :: Vertex), v, GL.StaticDraw)
-      GL.drawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
+      glUniform1f locTextureMix 1
+      tex <- fetchTexture bmp h
+      glActiveTexture 0
+      glBindTexture GL_TEXTURE_2D tex
+      glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
+      draw mode vs
 
     trans locMats locLevel f m (color0, n) = do
-      with f $ \ptr -> GL.glUniformMatrix4fv (locMats + n) 1 1 (castPtr ptr)
-      GL.glUniform1i locLevel (unsafeCoerce $ n + 1)
+      with f $ \ptr -> glUniformMatrix4fv (locMats + n) 1 1 (castPtr ptr)
+      glUniform1i locLevel (unsafeCoerce $ n + 1)
       () <- m (color0, n + 1)
-      GL.glUniform1i locLevel (unsafeCoerce n)
+      glUniform1i locLevel (unsafeCoerce n)
 
     fx _ (EmbedIO m) c = m >>= ($ c)
 
     fx locDiffuse (Diffuse col m) (color0, n) = do
       let c = col * color0
-      with c $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
+      with c $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
       m (c, n)
-      with color0 $ \ptr -> GL.glUniform4fv locDiffuse 1 (castPtr ptr)
+      with color0 $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
 
     fx _ _ _ = fail "Unsupported"
 
@@ -450,8 +452,8 @@ drawSight (Sight s) = do
   b <- readIORef $ G.refRegion $ theSystem given
   s b (return ()) (>>) drawScene
 
-convPrimitiveMode :: U.PrimitiveMode -> GL.PrimitiveMode
-convPrimitiveMode U.LineStrip = GL.LineStrip
-convPrimitiveMode U.TriangleFan = GL.TriangleFan
-convPrimitiveMode U.TriangleStrip = GL.TriangleStrip
-convPrimitiveMode U.LineLoop = GL.LineLoop
+convPrimitiveMode :: U.PrimitiveMode -> GLenum
+convPrimitiveMode U.LineStrip = GL_LINE_STRIP
+convPrimitiveMode U.TriangleFan = GL_TRIANGLE_FAN
+convPrimitiveMode U.TriangleStrip = GL_TRIANGLE_STRIP
+convPrimitiveMode U.LineLoop = GL_LINE_LOOP
