@@ -98,6 +98,7 @@ import Data.Input.Event
 import Data.IORef
 import Data.Maybe
 import Data.Monoid
+import Data.Int (Int32)
 import Data.Reflection
 import Foreign (castPtr, sizeOf, with)
 import Graphics.GL
@@ -395,12 +396,20 @@ fetchTexture bmp h = do
       writeIORef (textures given) $ HM.insert h t st
       return t
 
-drawScene :: Call => Box V2 Float -> M44 Float -> Bool -> Scene -> IO ()
-drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene s) = do
+newtype SideEffect m = SideEffect { runSideEffect :: m () }
+
+instance Monad m => Monoid (SideEffect m) where
+  mempty = SideEffect (return ())
+  mappend (SideEffect m) (SideEffect n) = SideEffect (m >> n)
+
+drawScene :: Call => Box V2 Float -> M44 Float -> Bool -> Scene -> SideEffect IO
+drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = SideEffect $ do
   glViewport x0 y0 (x1 - x0) (y1 - y0)
   if cull
     then glCullFace GL_BACK
     else glCullFace GL_FRONT_AND_BACK
+
+  let shaderProg = G.theProgram $ theSystem given
 
   glUseProgram shaderProg
   G.withUniform shaderProg "projection" $ \loc -> with proj
@@ -410,47 +419,51 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene s) = do
   locLevel <- G.withUniform shaderProg "level" return
   locDiffuse <- G.withUniform shaderProg "diffuse" return
   with (V4 1 1 (1 :: Float) 1) $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
-  s (pure $ return ()) (liftA2 (>>)) (prim locTextureMix) (fx locDiffuse) (trans locMats locLevel) (V4 1 1 1 1, 0)
-  where
-    draw mode vs = do
-      let siz = fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)
-      V.unsafeWith vs $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
-      glDrawArrays (convPrimitiveMode mode) 0 $ fromIntegral $ V.length vs
 
-    shaderProg = G.theProgram $ theSystem given
+  let go (WithVertices vs r) c = SideEffect $ do
+        buf <- G.overPtr $ glGenBuffers 1
+        let siz = fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)
+        glBindBuffer GL_ARRAY_BUFFER buf
+        G.vertexAttributes
+        V.unsafeWith vs $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
+        runSideEffect $ r (buf, fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)) c
+        with buf $ glDeleteBuffers 1
+      go (DrawPrimitive Blank mode (buf, n)) _ = SideEffect $ do
+        glUniform1f locTextureMix 0
+        glBindBuffer GL_ARRAY_BUFFER buf
+        G.vertexAttributes
+        glDrawArrays (convPrimitiveMode mode) 0 n
 
-    prim locTextureMix Blank mode vs _ = do
-      glUniform1f locTextureMix 0
-      draw mode vs
+      go (DrawPrimitive (Bitmap bmp _ h) mode (buf, n)) _ = SideEffect $ do
+        glUniform1f locTextureMix 1
+        tex <- fetchTexture bmp h
+        glActiveTexture 0
+        glBindTexture GL_TEXTURE_2D tex
+        glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
+        glBindBuffer GL_ARRAY_BUFFER buf
+        G.vertexAttributes
+        glDrawArrays (convPrimitiveMode mode) 0 n
 
-    prim locTextureMix (Bitmap bmp _ h) mode vs _ = do
-      glUniform1f locTextureMix 1
-      tex <- fetchTexture bmp h
-      glActiveTexture 0
-      glBindTexture GL_TEXTURE_2D tex
-      glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
-      draw mode vs
+      go (ApplyMatrix mat r) (color0, n) = SideEffect $ do
+        with mat $ \ptr -> glUniformMatrix4fv (locMats + n) 1 1 (castPtr ptr)
+        glUniform1i locLevel (unsafeCoerce $ n + 1)
+        runSideEffect $ r (color0, n + 1)
+        glUniform1i locLevel (unsafeCoerce n)
 
-    trans locMats locLevel f m (color0, n) = do
-      with f $ \ptr -> glUniformMatrix4fv (locMats + n) 1 1 (castPtr ptr)
-      glUniform1i locLevel (unsafeCoerce $ n + 1)
-      () <- m (color0, n + 1)
-      glUniform1i locLevel (unsafeCoerce n)
+      go (EmbedIO m) c = SideEffect $ m >>= runSideEffect . ($ c)
 
-    fx _ (EmbedIO m) c = m >>= ($ c)
+      go (Diffuse col r) (color0, n) = SideEffect $ do
+        let c = col * color0
+        with c $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
+        runSideEffect $ r (c, n)
+        with color0 $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
 
-    fx locDiffuse (Diffuse col m) (color0, n) = do
-      let c = col * color0
-      with c $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
-      m (c, n)
-      with color0 $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
-
-    fx _ _ _ = fail "Unsupported"
+  runSideEffect $ runRendering scene go (V4 1 1 1 1, 0)
 
 drawSight :: Call => Sight -> IO ()
-drawSight (Sight s) = do
+drawSight s = do
   b <- readIORef $ G.refRegion $ theSystem given
-  s b (return ()) (>>) drawScene
+  runSideEffect $ unSight s b drawScene
 
 convPrimitiveMode :: U.PrimitiveMode -> GLenum
 convPrimitiveMode U.LineStrip = GL_LINE_STRIP

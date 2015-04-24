@@ -36,6 +36,8 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified GHC.IO.Encoding as Encoding
 import qualified Graphics.UI.GLFW as GLFW
+import Graphics.GL
+import Graphics.GL.Ext.EXT.TextureFilterAnisotropic
 
 data System = System
   { refRegion :: IORef (Box V2 Float)
@@ -51,8 +53,19 @@ installTexture (Image w h vec) = do
   glBindTexture GL_TEXTURE_2D tex
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_LINEAR
+  glPixelStorei GL_UNPACK_LSB_FIRST 0
+  glPixelStorei GL_UNPACK_SWAP_BYTES 0
+  glPixelStorei GL_UNPACK_ROW_LENGTH 0
+  glPixelStorei GL_UNPACK_IMAGE_HEIGHT 0
+  glPixelStorei GL_UNPACK_SKIP_ROWS 0
+  glPixelStorei GL_UNPACK_SKIP_PIXELS 0
+  glPixelStorei GL_UNPACK_SKIP_IMAGES 0
+  glPixelStorei GL_UNPACK_ALIGNMENT 1
   let level = floor $ logBase (2 :: Float) $ fromIntegral (max w h)
   glTexStorage2D GL_TEXTURE_2D level GL_SRGB8 (fromIntegral w) (fromIntegral h)
+
+  when gl_EXT_texture_filter_anisotropic
+    $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 16
 
   V.unsafeWith vec $ glTexSubImage2D GL_TEXTURE_2D 0 0 0 (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE . castPtr
 
@@ -112,31 +125,33 @@ compileShader path shader = do
 
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
 overPtr f = alloca $ \p -> f p >> peek p
+{-# INLINE overPtr #-}
+
+vertexAttributes :: IO ()
+vertexAttributes = do
+  glVertexAttribPointer 0 3 GL_FLOAT GL_FALSE stride nullPtr
+  glEnableVertexAttribArray 0
+
+  glVertexAttribPointer 1 2 GL_FLOAT GL_FALSE stride pos'
+  glEnableVertexAttribArray 1
+
+  glVertexAttribPointer 2 3 GL_FLOAT GL_FALSE stride pos''
+  glEnableVertexAttribArray 2
+  where
+    stride = fromIntegral $ sizeOf (undefined :: Vertex)
+    {-# INLINE stride #-}
+    pos' = nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)
+    {-# INLINS pos' #-}
+    pos'' = pos' `plusPtr` sizeOf (0 :: V2 CFloat)
+    {-# INLINE pos'' #-}
+{-# INLINE vertexAttributes #-}
 
 initializeGL :: IO GLuint
 initializeGL = do
-  let vertexAttribute = 0
-  let uvAttribute = 1
-  let normalAttribute = 2
 
   vao <- overPtr $ glGenVertexArrays 1
-  vbo <- overPtr $ glGenBuffers 1
 
   glBindVertexArray vao
-  glBindBuffer GL_ARRAY_BUFFER vbo
-
-  let stride = fromIntegral $ sizeOf (undefined :: Vertex)
-
-  glVertexAttribPointer vertexAttribute 3 GL_FLOAT GL_FALSE stride nullPtr
-  glEnableVertexAttribArray vertexAttribute
-
-  let pos' = nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)
-
-  glVertexAttribPointer uvAttribute 2 GL_FLOAT GL_FALSE stride pos'
-  glEnableVertexAttribArray uvAttribute
-
-  glVertexAttribPointer normalAttribute 3 GL_FLOAT GL_FALSE stride (pos' `plusPtr` sizeOf (0 :: V2 CFloat))
-  glEnableVertexAttribArray normalAttribute
 
   vertexShader <- glCreateShader GL_VERTEX_SHADER
   fragmentShader <- glCreateShader GL_FRAGMENT_SHADER
@@ -145,18 +160,21 @@ initializeGL = do
   shaderProg <- glCreateProgram
   glAttachShader shaderProg vertexShader
   glAttachShader shaderProg fragmentShader
-  withCString "in_Position" $ glBindAttribLocation shaderProg vertexAttribute
-  withCString "in_UV" $ glBindAttribLocation shaderProg uvAttribute
-  withCString "in_Normal" $ glBindAttribLocation shaderProg normalAttribute
+  withCString "in_Position" $ glBindAttribLocation shaderProg 0
+  withCString "in_UV" $ glBindAttribLocation shaderProg 1
+  withCString "in_Normal" $ glBindAttribLocation shaderProg 2
   glLinkProgram shaderProg
   glUseProgram shaderProg
 
   glDepthMask GL_TRUE
   glDepthFunc GL_LEQUAL
   glColorMask GL_TRUE GL_TRUE GL_TRUE GL_TRUE
-
+  glEnable GL_CULL_FACE
   glEnable GL_BLEND
+  glEnable GL_DEPTH_TEST
   glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
+  glEnable GL_FRAMEBUFFER_SRGB
+
   linked <- overPtr (glGetProgramiv shaderProg GL_LINK_STATUS)
   when (linked == GL_FALSE) $ do
     maxLength <- overPtr (glGetProgramiv shaderProg GL_INFO_LOG_LENGTH)
@@ -167,7 +185,6 @@ initializeGL = do
     putStrLn logLines
 
   glEnable GL_LINE_SMOOTH
-  -- GL.textureFunction $= GL.Combine
   glClearColor 0 0 0 1
   withUniform shaderProg "useEnv" $ \l -> glUniform1i l 0
   withUniform shaderProg "tex" $ \l -> glUniform1i l 0
@@ -179,6 +196,7 @@ initializeGL = do
 
 withUniform :: GLuint -> String -> (GLint -> IO a) -> IO a
 withUniform prog str k = withCString str $ \p -> glGetUniformLocation prog p >>= k
+{-# INLINE withUniform #-}
 
 endGLFW :: System -> IO ()
 endGLFW sys = do
