@@ -395,6 +395,7 @@ fetchTexture bmp h = do
       t <- G.installTexture bmp
       writeIORef (textures given) $ HM.insert h t st
       return t
+{-# INLINE fetchTexture #-}
 
 newtype SideEffect m = SideEffect { runSideEffect :: m () }
 
@@ -418,9 +419,31 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = Si
   locMats <- G.withUniform shaderProg "matrices" return
   locLevel <- G.withUniform shaderProg "level" return
   locDiffuse <- G.withUniform shaderProg "diffuse" return
+  G.withUniform shaderProg "fogDensity" $ \loc -> glUniform1f loc 0
   with (V4 1 1 (1 :: Float) 1) $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
+  glUniform1f locTextureMix 1
+  glActiveTexture 0
+  let go (DrawPrimitive (Bitmap bmp _ h) mode (buf, n)) (_, lv) = SideEffect $ do
+        tex <- fetchTexture bmp h
+        glBindTexture GL_TEXTURE_2D tex
+        glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
+        glBindBuffer GL_ARRAY_BUFFER buf
+        glUniform1i locLevel (unsafeCoerce lv)
+        G.vertexAttributes
+        glDrawArrays (convPrimitiveMode mode) 0 n
 
-  let go (WithVertices vs r) c = SideEffect $ do
+      go (DrawPrimitive Blank mode (buf, n)) (_, lv) = SideEffect $ do
+        glUniform1f locTextureMix 0
+        glBindBuffer GL_ARRAY_BUFFER buf
+        glUniform1i locLevel (unsafeCoerce lv)
+        G.vertexAttributes
+        glDrawArrays (convPrimitiveMode mode) 0 n
+
+      go (ApplyMatrix mat r) (color0, lv) = SideEffect $ do
+        with mat $ \ptr -> glUniformMatrix4fv (locMats + lv) 1 1 (castPtr ptr)
+        runSideEffect $ r (color0, lv + 1)
+
+      go (WithVertices vs r) c = SideEffect $ do
         buf <- G.overPtr $ glGenBuffers 1
         let siz = fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)
         glBindBuffer GL_ARRAY_BUFFER buf
@@ -428,36 +451,19 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = Si
         V.unsafeWith vs $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
         runSideEffect $ r (buf, fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)) c
         with buf $ glDeleteBuffers 1
-      go (DrawPrimitive Blank mode (buf, n)) _ = SideEffect $ do
-        glUniform1f locTextureMix 0
-        glBindBuffer GL_ARRAY_BUFFER buf
-        G.vertexAttributes
-        glDrawArrays (convPrimitiveMode mode) 0 n
-
-      go (DrawPrimitive (Bitmap bmp _ h) mode (buf, n)) _ = SideEffect $ do
-        glUniform1f locTextureMix 1
-        tex <- fetchTexture bmp h
-        glActiveTexture 0
-        glBindTexture GL_TEXTURE_2D tex
-        glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
-        glBindBuffer GL_ARRAY_BUFFER buf
-        G.vertexAttributes
-        glDrawArrays (convPrimitiveMode mode) 0 n
-
-      go (ApplyMatrix mat r) (color0, n) = SideEffect $ do
-        with mat $ \ptr -> glUniformMatrix4fv (locMats + n) 1 1 (castPtr ptr)
-        glUniform1i locLevel (unsafeCoerce $ n + 1)
-        runSideEffect $ r (color0, n + 1)
-        glUniform1i locLevel (unsafeCoerce n)
 
       go (EmbedIO m) c = SideEffect $ m >>= runSideEffect . ($ c)
-
+      go (Foggy d color r) c = SideEffect $ do
+        G.withUniform shaderProg "fogDensity" $ \loc -> glUniform1f loc d
+        with color $ \ptr -> G.withUniform shaderProg "fogColor" $ \loc -> glUniform4fv loc 1 (castPtr ptr)
+        runSideEffect $ r c
+        G.withUniform shaderProg "fogDensity" $ \loc -> glUniform1f loc 0
       go (Diffuse col r) (color0, n) = SideEffect $ do
         let c = col * color0
         with c $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
         runSideEffect $ r (c, n)
         with color0 $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
-
+      {-# INLINE go #-}
   runSideEffect $ runRendering scene go (V4 1 1 1 1, 0)
 
 drawSight :: Call => Sight -> IO ()
