@@ -5,15 +5,12 @@ out vec4 fragColor;
 in vec2 texUV;
 
 in vec3 normal;
-in vec3 lightDir;
-in float fogginess;
+// in vec3 lightDir;
+// in float fogginess;
 
 uniform sampler2D tex;
-uniform sampler2D normalMap;
 
 uniform vec4 diffuse;
-uniform vec3 specular;
-uniform float normalMix;
 uniform float textureMix;
 uniform vec4 fogColor;
 
@@ -28,6 +25,6 @@ void main(void){
   // float shine = dot(reflect(lightDir, n), view);
 
   // fragColor = vec4(d.rgb * brightness + specular * shine, d.a);
-  fragColor = mix(fogColor, d, fogginess);
+  fragColor = d;
 
 }

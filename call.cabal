@@ -55,6 +55,7 @@ library
     linear >=1.13 && <2,
     mtl >=2.0 && <2.7,
     objective >= 1 && <1.1,
+    parallel,
     random ==1.*,
     reflection,
     template-haskell == 2.*,
@@ -63,6 +64,7 @@ library
     unordered-containers,
     vector >=0.9 && <0.13,
     WAVE >=0.1 && <0.2,
-    gl
+    gl,
+    criterion
   hs-source-dirs:      src
   default-language:    Haskell2010

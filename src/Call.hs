@@ -100,7 +100,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Int (Int32)
 import Data.Reflection
-import Foreign (castPtr, sizeOf, with)
+import Foreign (castPtr, sizeOf, with, poke, malloc, free)
 import Graphics.GL
 import Linear
 import qualified Call.Internal.GLFW as G
@@ -113,6 +113,8 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified Graphics.UI.GLFW as GLFW
 import Unsafe.Coerce
+import qualified Criterion.Measurement as Criterion
+import Control.Parallel
 
 data WindowMode = Windowed | Resizable | FullScreen deriving (Show, Eq, Ord, Read, Typeable)
 
@@ -232,6 +234,8 @@ runCall mode box m = do
   putStr "Debug context: "
   print =<< GLFW.getWindowOpenGLDebugContext win
   print =<< GLFW.getWindowOpenGLProfile win
+
+  Criterion.initializeTime
 
   ref <- newEmptyMVar
   _ <- flip forkFinally (either throwIO (putMVar ref)) (give fd m)
@@ -390,7 +394,7 @@ fetchTexture :: Call => C.Image C.PixelRGBA8 -> Int -> IO G.Texture
 fetchTexture bmp h = do
   st <- readIORef (textures given)
   case HM.lookup h st of
-    Just t -> return t
+    Just t -> return $! t
     Nothing -> do
       t <- G.installTexture bmp
       writeIORef (textures given) $ HM.insert h t st
@@ -405,6 +409,12 @@ runSideEffect :: Endo (IO ()) -> IO ()
 runSideEffect (Endo m) = m (return ())
 {-# INLINE runSideEffect #-}
 
+mult44 :: M44 Float -> M44 Float -> M44 Float
+mult44 f g = fmap (plus . liftA2 (^*) g) f where
+  plus (V4 a b c d) = (a ^+^ b) ^+^ (c ^+^ d)
+  {-# INLINE plus #-}
+{-# INLINE mult44 #-}
+
 drawScene :: Call => Box V2 Float -> M44 Float -> Bool -> Scene -> Endo (IO ())
 drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = sideEffect $ do
   glViewport x0 y0 (x1 - x0) (y1 - y0)
@@ -417,34 +427,37 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = si
   glUseProgram shaderProg
   G.withUniform shaderProg "projection" $ \loc -> with proj
     $ \ptr -> glUniformMatrix4fv loc 1 1 $ castPtr ptr
-  locTextureMix <- G.withUniform shaderProg "textureMix" return
-  locMats <- G.withUniform shaderProg "matrices" return
-  locLevel <- G.withUniform shaderProg "level" return
-  locDiffuse <- G.withUniform shaderProg "diffuse" return
+  !locTextureMix <- G.withUniform shaderProg "textureMix" return
+  !locMat <- G.withUniform shaderProg "model" return
+  !locLevel <- G.withUniform shaderProg "level" return
+  !locDiffuse <- G.withUniform shaderProg "diffuse" return
   G.withUniform shaderProg "fogDensity" $ \loc -> glUniform1f loc 0
   with (V4 1 1 (1 :: Float) 1) $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
   glUniform1f locTextureMix 1
   glActiveTexture 0
-  let go (DrawPrimitive (Bitmap bmp _ h) (m, buf, n)) (_, lv) = sideEffect $ do
+  pmat <- malloc
+  t0 <- Criterion.getTime
+  let drawT bmp h (m, buf, n) (_, mat) = sideEffect $ do
         tex <- fetchTexture bmp h
-        glUniform1f locTextureMix 1
         glBindTexture GL_TEXTURE_2D tex
-        glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
+        -- glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
         glBindBuffer GL_ARRAY_BUFFER buf
-        glUniform1i locLevel (unsafeCoerce lv)
+        poke pmat mat
+        glUniformMatrix4fv locMat 1 1 (castPtr pmat)
         G.vertexAttributes
         glDrawArrays m 0 n
-
-      go (DrawPrimitive Blank (m, buf, n)) (_, lv) = sideEffect $ do
+      {-# INLINE drawT #-}
+      draw (m, buf, n) (_, mat) = sideEffect $ do
         glUniform1f locTextureMix 0
         glBindBuffer GL_ARRAY_BUFFER buf
-        glUniform1i locLevel (unsafeCoerce lv)
         G.vertexAttributes
         glDrawArrays m 0 n
-
-      go (ApplyMatrix mat r) (color0, lv) = sideEffect $ do
-        with mat $ \ptr -> glUniformMatrix4fv (locMats + lv) 1 1 (castPtr ptr)
-        runSideEffect $ r (color0, lv + 1)
+        glUniform1f locTextureMix 1
+      {-# INLINE draw #-}
+      withMatrix mat r (color0, m) = sideEffect $ do
+        let !m' = mult44 m mat
+        runSideEffect $ r (color0, m')
+      {-# INLINE withMatrix #-}
 
       go (WithVertices mode vs r) c = sideEffect $ do
         buf <- G.overPtr $ glGenBuffers 1
@@ -456,7 +469,6 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = si
           , buf
           , fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)) c
         with buf $ glDeleteBuffers 1
-
       go (EmbedIO m) c = sideEffect $ m >>= runSideEffect . ($ c)
       go (Foggy d color r) c = sideEffect $ do
         G.withUniform shaderProg "fogDensity" $ \loc -> glUniform1f loc d
@@ -469,7 +481,10 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = si
         runSideEffect $ r (c, n)
         with color0 $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
       {-# INLINE go #-}
-  runSideEffect $ runRendering scene go (V4 1 1 1 1, 0)
+  runSideEffect $ runRendering scene (Intensive drawT draw withMatrix) go (V4 1 1 1 1, identity)
+  free pmat
+  t1 <- Criterion.getTime
+  print (t1 - t0)
 
 drawSight :: Call => Sight -> IO ()
 drawSight s = do

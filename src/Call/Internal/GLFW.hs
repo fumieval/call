@@ -141,7 +141,7 @@ vertexAttributes = do
     stride = fromIntegral $ sizeOf (undefined :: Vertex)
     {-# INLINE stride #-}
     pos' = nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)
-    {-# INLINS pos' #-}
+    {-# INLINE pos' #-}
     pos'' = pos' `plusPtr` sizeOf (0 :: V2 CFloat)
     {-# INLINE pos'' #-}
 {-# INLINE vertexAttributes #-}
