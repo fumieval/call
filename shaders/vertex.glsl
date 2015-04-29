@@ -1,7 +1,6 @@
-#version 150
+#version 400
 uniform mat4 projection;
 uniform mat4 model;
-uniform int level;
 uniform float fogDensity;
 
 in vec3 in_Position;

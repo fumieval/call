@@ -1,4 +1,4 @@
-#version 150
+#version 400
 out vec4 fragColor;
 
 // Texture
@@ -17,7 +17,7 @@ uniform vec4 fogColor;
 void main(void){
   // vec3 n = mix(normal, texture(normalMap, texUV).rgb * 2 - 1, normalMix);
 
-  vec4 d = mix(vec4(1.0), texture(tex, texUV).rgba, textureMix) * diffuse;
+  vec4 d = texture(tex, texUV).rgba * diffuse;
 
   // vec3 view = vec3(0,0,1);
   // float brightness = 1.0;

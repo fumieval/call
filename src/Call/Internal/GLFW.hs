@@ -65,7 +65,7 @@ installTexture (Image w h vec) = do
   glTexStorage2D GL_TEXTURE_2D level GL_SRGB8 (fromIntegral w) (fromIntegral h)
 
   when gl_EXT_texture_filter_anisotropic
-    $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 16
+    $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 8
 
   V.unsafeWith vec $ glTexSubImage2D GL_TEXTURE_2D 0 0 0 (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE . castPtr
 
@@ -138,21 +138,13 @@ vertexAttributes = do
   glVertexAttribPointer 2 3 GL_FLOAT GL_FALSE stride pos''
   glEnableVertexAttribArray 2
   where
-    stride = fromIntegral $ sizeOf (undefined :: Vertex)
-    {-# INLINE stride #-}
-    pos' = nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)
-    {-# INLINE pos' #-}
-    pos'' = pos' `plusPtr` sizeOf (0 :: V2 CFloat)
-    {-# INLINE pos'' #-}
+    !stride = fromIntegral $ sizeOf (undefined :: Vertex)
+    !pos' = nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)
+    !pos'' = pos' `plusPtr` sizeOf (0 :: V2 CFloat)
 {-# INLINE vertexAttributes #-}
 
 initializeGL :: IO GLuint
 initializeGL = do
-
-  vao <- overPtr $ glGenVertexArrays 1
-
-  glBindVertexArray vao
-
   vertexShader <- glCreateShader GL_VERTEX_SHADER
   fragmentShader <- glCreateShader GL_FRAGMENT_SHADER
   compileShader "shaders/vertex.glsl" vertexShader
@@ -170,9 +162,10 @@ initializeGL = do
   glDepthFunc GL_LEQUAL
   glColorMask GL_TRUE GL_TRUE GL_TRUE GL_TRUE
   glEnable GL_CULL_FACE
-  glEnable GL_BLEND
+  -- glEnable GL_BLEND
+  -- glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
+  glBlendFunc GL_ONE GL_ZERO
   glEnable GL_DEPTH_TEST
-  glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
   glEnable GL_FRAMEBUFFER_SRGB
 
   linked <- overPtr (glGetProgramiv shaderProg GL_LINK_STATUS)

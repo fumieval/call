@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -419,8 +420,10 @@ drawScene :: Call => Box V2 Float -> M44 Float -> Bool -> Scene -> Endo (IO ())
 drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = sideEffect $ do
   glViewport x0 y0 (x1 - x0) (y1 - y0)
   if cull
-    then glCullFace GL_BACK
-    else glCullFace GL_FRONT_AND_BACK
+    then do
+      glEnable GL_CULL_FACE
+      glCullFace GL_BACK
+    else glDisable GL_CULL_FACE
 
   let shaderProg = G.theProgram $ theSystem given
 
@@ -429,25 +432,32 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = si
     $ \ptr -> glUniformMatrix4fv loc 1 1 $ castPtr ptr
   !locTextureMix <- G.withUniform shaderProg "textureMix" return
   !locMat <- G.withUniform shaderProg "model" return
-  !locLevel <- G.withUniform shaderProg "level" return
   !locDiffuse <- G.withUniform shaderProg "diffuse" return
   G.withUniform shaderProg "fogDensity" $ \loc -> glUniform1f loc 0
   with (V4 1 1 (1 :: Float) 1) $ \ptr -> glUniform4fv locDiffuse 1 (castPtr ptr)
   glUniform1f locTextureMix 1
   glActiveTexture 0
   pmat <- malloc
-  t0 <- Criterion.getTime
-  let drawT bmp h (m, buf, n) (_, mat) = sideEffect $ do
-        tex <- fetchTexture bmp h
-        glBindTexture GL_TEXTURE_2D tex
-        -- glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
-        glBindBuffer GL_ARRAY_BUFFER buf
+
+  tpoke <- newIORef 0
+  let measure ref m = do
+        t0 <- Criterion.getTime
+        !r <- m
+        t1 <- Criterion.getTime
+        modifyIORef' ref (\t -> t + t1 - t0)
+        return r
+      {-# INLINE measure #-}
+
+  let drawT bmp h (m, vao, buf, n) (_, mat) = sideEffect $ measure tpoke $ do
         poke pmat mat
         glUniformMatrix4fv locMat 1 1 (castPtr pmat)
-        G.vertexAttributes
-        glDrawArrays m 0 n
+        tex <- fetchTexture bmp h -- 5 - 10% of glDrawArrays
+        glBindTexture GL_TEXTURE_2D tex
+        glBindVertexArray vao
+        glBindBuffer GL_ARRAY_BUFFER buf
+        glDrawArrays m 0 n -- 20ms
       {-# INLINE drawT #-}
-      draw (m, buf, n) (_, mat) = sideEffect $ do
+      draw (m, vao, buf, n) (_, mat) = sideEffect $ do
         glUniform1f locTextureMix 0
         glBindBuffer GL_ARRAY_BUFFER buf
         G.vertexAttributes
@@ -460,14 +470,17 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = si
       {-# INLINE withMatrix #-}
 
       go (WithVertices mode vs r) c = sideEffect $ do
+        vao <- G.overPtr $ glGenVertexArrays 1
+        glBindVertexArray vao
         buf <- G.overPtr $ glGenBuffers 1
         let siz = fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)
         glBindBuffer GL_ARRAY_BUFFER buf
         G.vertexAttributes
         V.unsafeWith vs $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
         runSideEffect $ r (convPrimitiveMode mode
+          , vao
           , buf
-          , fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)) c
+          , fromIntegral $ V.length vs) c
         with buf $ glDeleteBuffers 1
       go (EmbedIO m) c = sideEffect $ m >>= runSideEffect . ($ c)
       go (Foggy d color r) c = sideEffect $ do
@@ -483,8 +496,7 @@ drawScene (fmap round -> Box (V2 x0 y0) (V2 x1 y1)) proj cull (Scene scene) = si
       {-# INLINE go #-}
   runSideEffect $ runRendering scene (Intensive drawT draw withMatrix) go (V4 1 1 1 1, identity)
   free pmat
-  t1 <- Criterion.getTime
-  print (t1 - t0)
+  print =<< readIORef tpoke
 
 drawSight :: Call => Sight -> IO ()
 drawSight s = do
@@ -492,7 +504,9 @@ drawSight s = do
   runSideEffect $ unSight s b drawScene
 
 convPrimitiveMode :: U.PrimitiveMode -> GLenum
+convPrimitiveMode U.Triangles = GL_TRIANGLES
 convPrimitiveMode U.LineStrip = GL_LINE_STRIP
 convPrimitiveMode U.TriangleFan = GL_TRIANGLE_FAN
 convPrimitiveMode U.TriangleStrip = GL_TRIANGLE_STRIP
 convPrimitiveMode U.LineLoop = GL_LINE_LOOP
+{-# INLINE convPrimitiveMode #-}
